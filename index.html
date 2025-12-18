@@ -1,0 +1,99 @@
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bem Estar Controle - Gestão Financeira</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                orange: '#F6511D',
+                green: '#8AC926',
+                blue: '#1C5CB0',
+                cyan: '#6ED1EA',
+                yellow: '#FEC601'
+              }
+            },
+            fontFamily: {
+              sans: ['Inter', 'sans-serif'],
+            },
+            boxShadow: {
+              'subtle': '0 4px 20px -4px rgba(0,0,0,0.03)',
+              'subtle-lg': '0 10px 30px -10px rgba(0,0,0,0.05)'
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { background-color: #f8fafc; color: #1e293b; }
+      .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+      /* Estilos de Impressão para PDF */
+      @media print {
+        @page {
+          size: A4;
+          margin: 15mm;
+        }
+        aside, nav, button, .no-print {
+          display: none !important;
+        }
+        main {
+          margin: 0 !important;
+          padding: 0 !important;
+          background: white !important;
+        }
+        .max-w-\[1500px\] {
+          max-width: 100% !important;
+          width: 100% !important;
+        }
+        .bg-\[#F8FAFC\] {
+          background: white !important;
+        }
+        .shadow-subtle, .shadow-subtle-lg, .shadow-lg, .shadow-2xl {
+          box-shadow: none !important;
+          border: 1px solid #f1f5f9 !important;
+        }
+        .rounded-\[48px\], .rounded-\[40px\], .rounded-\[32px\] {
+          border-radius: 12px !important;
+        }
+        .animate-in {
+          animation: none !important;
+        }
+        table {
+          page-break-inside: auto;
+        }
+        tr {
+          page-break-inside: avoid;
+          page-break-after: auto;
+        }
+        thead {
+          display: table-header-group;
+        }
+      }
+    </style>
+<script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "lucide-react": "https://esm.sh/lucide-react@^0.561.0",
+    "recharts": "https://esm.sh/recharts@^3.6.0"
+  }
+}
+</script>
+</head>
+<body>
+    <div id="root"></div>
+</body>
+</html>
