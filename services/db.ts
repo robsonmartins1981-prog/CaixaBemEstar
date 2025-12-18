@@ -6,17 +6,31 @@ const KEYS = {
   EXPENSES: 'fm_expenses',
 };
 
+// Gerador de ID compatível com contextos inseguros (HTTP)
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
+
 export const db = {
+  generateId,
+  
   getEntries: (): CashEntry[] => {
-    const data = localStorage.getItem(KEYS.ENTRIES);
-    return data ? JSON.parse(data) : [];
+    try {
+      const data = localStorage.getItem(KEYS.ENTRIES);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.error("Erro ao ler entradas do banco local:", e);
+      return [];
+    }
   },
   
   getNextCode: (): string => {
     const entries = db.getEntries();
     if (entries.length === 0) return '0001';
     
-    // Extrai os números dos códigos existentes e encontra o maior
     const codes = entries.map(e => parseInt(e.code, 10)).filter(n => !isNaN(n));
     const maxCode = codes.length > 0 ? Math.max(...codes) : 0;
     return (maxCode + 1).toString().padStart(4, '0');
@@ -36,15 +50,19 @@ export const db = {
     const entries = db.getEntries();
     const index = entries.findIndex(e => e.id === id);
     if (index !== -1) {
-      // Preserva o código original ao atualizar
       entries[index] = { ...entries[index], ...updatedEntry };
       localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
     }
   },
 
   getExpenses: (): Expense[] => {
-    const data = localStorage.getItem(KEYS.EXPENSES);
-    return data ? JSON.parse(data) : [];
+    try {
+      const data = localStorage.getItem(KEYS.EXPENSES);
+      return data ? JSON.parse(data) : [];
+    } catch (e) {
+      console.error("Erro ao ler despesas do banco local:", e);
+      return [];
+    }
   },
 
   saveExpense: (expense: Expense) => {

@@ -4,7 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell 
 } from 'recharts';
-import { TrendingUp, TrendingDown, Receipt, Wallet } from 'lucide-react';
+import { Wallet, Receipt, ArrowUpRight, ArrowDownRight } from 'lucide-react';
 import { CashEntry, Expense } from '../types';
 import { COLORS } from '../constants';
 
@@ -41,62 +41,61 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
   }, [entries, expenses]);
 
   return (
-    <div className="space-y-12 animate-in fade-in duration-700">
-      <header className="flex flex-col gap-2">
-        <h2 className="text-3xl font-black text-gray-900 tracking-tighter">Resumo Executivo</h2>
-        <p className="text-[11px] text-gray-400 font-black uppercase tracking-[0.3em]">Visão Geral de Performance</p>
-      </header>
-
-      {/* KPI Row - Sombra Suave */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-start">
-        <StatCard title="Total Receitas" value={stats.totalEntries} icon={<TrendingUp size={20} />} color={COLORS.green} />
-        <StatCard title="Total Retiradas" value={stats.totalSangrias} icon={<TrendingDown size={20} />} color={COLORS.orange} />
-        <StatCard title="Despesas Pagas" value={stats.totalPaid} icon={<Wallet size={20} />} color={COLORS.blue} />
+    <div className="h-full flex flex-col gap-6 overflow-hidden">
+      <div className="grid grid-cols-4 gap-4 shrink-0">
+        <StatCard title="Receita Total" value={stats.totalEntries} icon={<ArrowUpRight size={20} />} color={COLORS.green} />
+        <StatCard title="Total Saídas" value={stats.totalSangrias} icon={<ArrowDownRight size={20} />} color={COLORS.orange} />
+        <StatCard title="Contas Pagas" value={stats.totalPaid} icon={<Wallet size={20} />} color={COLORS.blue} />
         <StatCard title="A Pagar" value={stats.totalPending} icon={<Receipt size={20} />} color={COLORS.yellow} />
       </div>
 
-      {/* Graphs - Sombras Suaves */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-start">
-        <div className="lg:col-span-8 bg-white p-10 rounded-[32px] border border-gray-100 shadow-subtle overflow-hidden flex flex-col h-full">
-          <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-10">Histórico de Fluxo</h3>
-          <div className="h-[380px]">
+      <div className="flex-1 grid grid-cols-12 gap-6 min-h-0">
+        <div className="col-span-8 bg-white p-6 rounded-3xl border border-gray-100 shadow-subtle flex flex-col min-h-0">
+          <div className="flex items-center justify-between mb-6 shrink-0">
+            <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider">Histórico Semanal</h3>
+            <div className="flex gap-4 text-[9px] font-black uppercase text-gray-400">
+               <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS.green}}></div> Entradas</div>
+               <div className="flex items-center gap-2"><div className="w-2 h-2 rounded-full" style={{backgroundColor: COLORS.orange}}></div> Saídas</div>
+            </div>
+          </div>
+          <div className="flex-1">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={stats.chartData}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                <XAxis dataKey="date" axisLine={false} tickLine={false} fontSize={10} fontWeight="900" tickFormatter={(val) => val.split('-').reverse().slice(0,2).join('/')} />
-                <YAxis axisLine={false} tickLine={false} fontSize={10} fontWeight="900" />
-                <Tooltip cursor={{fill: '#F8FAFC'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.05)'}} />
-                <Bar dataKey="entradas" fill={COLORS.green} radius={[4, 4, 0, 0]} barSize={20} />
-                <Bar dataKey="sangrias" fill={COLORS.orange} radius={[4, 4, 0, 0]} barSize={20} />
+                <XAxis dataKey="date" axisLine={false} tickLine={false} fontSize={9} fontWeight="900" tickFormatter={(val) => val.split('-').reverse().slice(0,2).join('/')} />
+                <YAxis axisLine={false} tickLine={false} fontSize={9} fontWeight="900" />
+                <Tooltip contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.05)'}} />
+                <Bar dataKey="entradas" fill={COLORS.green} radius={[4, 4, 0, 0]} barSize={24} />
+                <Bar dataKey="sangrias" fill={COLORS.orange} radius={[4, 4, 0, 0]} barSize={24} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="lg:col-span-4 bg-white p-10 rounded-[32px] border border-gray-100 shadow-subtle h-full flex flex-col">
-          <h3 className="text-[11px] font-black text-gray-400 uppercase tracking-widest mb-10">Mix de Receita</h3>
-          <div className="h-[280px] relative">
+        <div className="col-span-4 bg-white p-6 rounded-3xl border border-gray-100 shadow-subtle flex flex-col min-h-0">
+          <h3 className="text-sm font-black text-gray-900 uppercase tracking-wider mb-6 shrink-0">Mix de Receita</h3>
+          <div className="flex-1 relative min-h-0">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={stats.paymentMethods.filter(p => p.value > 0)} innerRadius={75} outerRadius={100} paddingAngle={6} dataKey="value" stroke="none">
+                <Pie data={stats.paymentMethods.filter(p => p.value > 0)} innerRadius="65%" outerRadius="90%" paddingAngle={5} dataKey="value" stroke="none">
                   {stats.paymentMethods.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
                 </Pie>
-                <Tooltip contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px rgba(0,0,0,0.05)'}} />
+                <Tooltip />
               </PieChart>
             </ResponsiveContainer>
             <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span className="text-[9px] font-black text-gray-300 uppercase">Bruto</span>
-              <span className="text-xl font-black text-gray-900 tracking-tighter">R$ {Math.round(stats.totalEntries / 1000)}k</span>
+              <span className="text-[10px] font-black text-gray-300 uppercase">Total</span>
+              <span className="text-xl font-black text-gray-900 tracking-tight">R$ {Math.round(stats.totalEntries / 1000)}k</span>
             </div>
           </div>
-          <div className="mt-8 space-y-2">
+          <div className="mt-4 grid grid-cols-2 gap-2 shrink-0">
              {stats.paymentMethods.map(m => (
-               <div key={m.name} className="flex items-center justify-between p-3 rounded-xl hover:bg-gray-50 transition-colors">
-                 <div className="flex items-center gap-3">
-                   <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: m.color }}></div>
-                   <span className="text-[10px] font-black text-gray-500 uppercase tracking-widest">{m.name}</span>
+               <div key={m.name} className="flex items-center justify-between p-2 rounded-xl bg-gray-50/50 border border-gray-100">
+                 <div className="flex items-center gap-2">
+                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: m.color }}></div>
+                   <span className="text-[9px] font-black text-gray-500 uppercase">{m.name}</span>
                  </div>
-                 <span className="text-xs font-black text-gray-900">R$ {m.value.toFixed(0)}</span>
+                 <span className="text-[10px] font-black text-gray-900">R$ {m.value.toLocaleString('pt-BR')}</span>
                </div>
              ))}
           </div>
@@ -107,17 +106,15 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
 };
 
 const StatCard = ({ title, value, icon, color }: any) => (
-  <div className="bg-white p-6 rounded-[24px] border border-gray-100 shadow-subtle group overflow-hidden relative transition-all hover:-translate-y-1">
-    <div className="flex items-center gap-4">
-      <div className="w-11 h-11 rounded-xl flex items-center justify-center text-white shadow-subtle shrink-0" style={{ backgroundColor: color }}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest truncate">{title}</p>
-        <p className="text-xl font-black text-gray-900 tracking-tighter truncate leading-none mt-1">
-          R$ {value.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
-        </p>
-      </div>
+  <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-subtle flex items-center gap-4">
+    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ backgroundColor: color }}>
+      {icon}
+    </div>
+    <div className="min-w-0">
+      <p className="text-[9px] font-black text-gray-400 uppercase tracking-widest truncate">{title}</p>
+      <p className="text-lg font-black text-gray-900 tracking-tighter truncate leading-none mt-1">
+        R$ {value.toLocaleString('pt-BR')}
+      </p>
     </div>
   </div>
 );
