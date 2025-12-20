@@ -6,7 +6,6 @@ const KEYS = {
   EXPENSES: 'fm_expenses',
 };
 
-// Gerador de ID compatível com contextos inseguros (HTTP)
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -40,6 +39,7 @@ export const db = {
     const entries = db.getEntries();
     const newEntry: CashEntry = {
       ...entry,
+      sangria: entry.sangria || 0,
       code: db.getNextCode()
     };
     entries.push(newEntry);
@@ -50,7 +50,7 @@ export const db = {
     const entries = db.getEntries();
     const index = entries.findIndex(e => e.id === id);
     if (index !== -1) {
-      entries[index] = { ...entries[index], ...updatedEntry };
+      entries[index] = { ...entries[index], ...updatedEntry, sangria: updatedEntry.sangria || 0 };
       localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
     }
   },

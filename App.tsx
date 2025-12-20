@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard';
 import CashEntryForm from './components/CashEntryForm';
 import AccountsPayable from './components/AccountsPayable';
 import Reports from './components/Reports';
+import ImportData from './components/ImportData';
 import { db } from './services/db';
 import { CashEntry, Expense } from './types';
 
@@ -32,6 +33,8 @@ const App: React.FC = () => {
         return <AccountsPayable expenses={expenses} onSuccess={loadData} />;
       case 'reports':
         return <Reports entries={entries} expenses={expenses} />;
+      case 'import':
+        return <ImportData onSuccess={loadData} />;
       default:
         return <Dashboard entries={entries} expenses={expenses} />;
     }

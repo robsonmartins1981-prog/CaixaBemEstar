@@ -1,6 +1,7 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ICONS, COLORS } from '../constants';
+import { Menu, X, LayoutGrid, Calculator, FileUp } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,58 +10,86 @@ interface LayoutProps {
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: ICONS.Dashboard },
-    { id: 'entries', label: 'Movimento', icon: ICONS.Entries },
-    { id: 'expenses', label: 'Contas', icon: ICONS.Expenses },
-    { id: 'reports', label: 'Relatórios', icon: ICONS.Reports },
+    { id: 'dashboard', label: 'Resumo GERAL', icon: <LayoutGrid size={20}/> },
+    { id: 'entries', label: 'CONTROLE DE CAIXA', icon: <Calculator size={20}/> },
+    { id: 'expenses', label: 'CONTAS A PAGAR', icon: ICONS.Expenses },
+    { id: 'reports', label: 'AUDITORIA', icon: ICONS.Reports },
+    { id: 'import', label: 'IMPORTAR DADOS', icon: <FileUp size={20}/> },
   ];
 
   return (
-    <div className="flex h-screen bg-[#F8FAFC] overflow-hidden font-sans selection:bg-green-100">
-      {/* Sidebar Compacta para ganhar espaço horizontal */}
-      <aside className="w-20 lg:w-64 bg-white border-r border-gray-100 flex flex-col shrink-0 z-50">
-        <div className="p-6 pb-10 flex items-center justify-center lg:justify-start gap-3">
-          <div className="w-10 h-10 rounded-xl flex items-center justify-center shadow-subtle shrink-0" style={{ backgroundColor: COLORS.green }}>
-            <span className="text-white text-base font-black italic">BE</span>
+    <div className="flex h-screen w-full bg-[#F1F5F9] overflow-hidden font-sans text-slate-800">
+      {/* Sidebar Lateral Compacta */}
+      <aside 
+        className={`fixed lg:static inset-y-0 left-0 w-64 bg-[#1E293B] text-white z-[100] transition-transform duration-300 transform shadow-2xl ${
+          isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        }`}
+      >
+        <div className="h-full flex flex-col">
+          <div className="p-6 bg-[#0F172A] flex items-center gap-3 border-b border-slate-700">
+            <div className="w-10 h-10 rounded bg-green-500 flex items-center justify-center font-black italic text-white shadow-lg">BE</div>
+            <div>
+              <h1 className="text-sm font-black tracking-tighter uppercase leading-none">Bem Estar</h1>
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">SISTEMA DE CAIXA</span>
+            </div>
           </div>
-          <div className="hidden lg:block">
-            <h1 className="text-lg font-black tracking-tighter leading-none text-green-600">Bem Estar</h1>
-          </div>
-        </div>
-        
-        <nav className="flex-1 px-4 space-y-2">
-          {menuItems.map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center justify-center lg:justify-start gap-4 px-4 py-4 rounded-2xl transition-all duration-200 ${
-                activeTab === item.id 
-                  ? 'bg-green-50 text-green-700 border border-green-100' 
-                  : 'text-gray-400 hover:bg-gray-50'
-              }`}
-            >
-              <div className="shrink-0">
-                {React.cloneElement(item.icon as React.ReactElement, { size: 20 })}
-              </div>
-              <span className="hidden lg:block text-[11px] font-black uppercase tracking-wider">{item.label}</span>
-            </button>
-          ))}
-        </nav>
 
-        <div className="p-6 hidden lg:block">
-          <div className="bg-gray-50 p-4 rounded-2xl border border-gray-100">
-            <p className="text-[9px] text-gray-400 font-black uppercase tracking-widest text-center">Admin v2.5</p>
+          <nav className="flex-1 p-4 space-y-1">
+            {menuItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); setIsSidebarOpen(false); }}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded text-left transition-all ${
+                  activeTab === item.id 
+                    ? 'bg-green-500 text-white shadow-md' 
+                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                {item.icon}
+                <span className="text-[11px] font-black uppercase tracking-wider">{item.label}</span>
+              </button>
+            ))}
+          </nav>
+
+          <div className="p-4 bg-[#0F172A] border-t border-slate-700">
+            <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase">
+              <span>Versão 3.5</span>
+              <span className="text-green-500">Online</span>
+            </div>
           </div>
         </div>
       </aside>
 
-      {/* Main Content Area - Sem scroll global */}
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 p-6 lg:p-8 overflow-hidden">
-          {children}
-        </div>
-      </main>
+      {/* Área Principal */}
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
+        {/* Top Bar Spreadsheet Style */}
+        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-50">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600"><Menu size={24}/></button>
+            <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] border-l-4 border-green-500 pl-3">
+              Módulo: {menuItems.find(i => i.id === activeTab)?.label}
+            </h2>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="hidden md:flex items-center gap-2 px-3 py-1 bg-slate-50 border border-slate-100 rounded text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+              Terminal 01
+            </div>
+            <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+              {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}
+            </div>
+          </div>
+        </header>
+
+        {/* Content - 100% ocupado e sem rolagem externa */}
+        <main className="flex-1 p-4 lg:p-6 overflow-hidden bg-[#F1F5F9]">
+          <div className="h-full w-full mx-auto flex flex-col">
+            {children}
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

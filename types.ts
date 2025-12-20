@@ -10,7 +10,7 @@ export interface CashEntry {
   credit: number;
   debit: number;
   pix: number;
-  sangria: number;
+  sangria: number; // Novo campo para retiradas
 }
 
 export type ExpenseCategory = 'Fornecedores' | 'Energia' | 'Pessoal' | 'Aluguel' | 'Outros';
