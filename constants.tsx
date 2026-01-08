@@ -10,7 +10,25 @@ export const COLORS = {
   yellow: '#FEC601',
 };
 
-export const CATEGORIES = ['Fornecedores', 'Energia', 'Pessoal', 'Aluguel', 'Outros'] as const;
+export const NATURES = [
+  'Custo da Mercadoria Vendida (CMV)', 
+  'Frete/Logística',
+  'Embalagens', 
+  'Impostos', 
+  'Aluguel', 
+  'Salários e Encargos Trabalhistas', 
+  'Pró-labore',
+  'Utilidades', 
+  'Marketing e Publicidade', 
+  'Contabilidade',
+  'Manutenção e Limpeza',
+  'Sistemas de Gestão',
+  'Equipamentos',
+  'Outros'
+] as const;
+
+export const COST_TYPES = ['Fixo', 'Variável'] as const;
+
 export const SHIFTS = ['CAIXA 01 (MANHÃ)', 'CAIXA 02 (TARDE)', 'CAIXA 03 (NOITE)'] as const;
 
 export const ICONS = {

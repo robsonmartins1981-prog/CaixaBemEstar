@@ -1,328 +1,428 @@
 
 import React, { useMemo, useState } from 'react';
-import { CashEntry, Expense, ShiftType } from '../types';
-import { SHIFTS } from '../constants';
+import { CashEntry, Expense, CardRates, ExpenseNature } from '../types';
+import { db } from '../services/db';
+import { NATURES } from '../constants';
 import { 
-  Calendar, FileSpreadsheet, FileText, TrendingUp, 
-  Scale, Filter, ChevronLeft, ChevronRight, Trophy, Target, BarChart2, Download, FileDown
+  ChevronLeft, ChevronRight, FileDown, PieChart, ClipboardList, Settings2, Percent, BookOpen, Filter, BarChart3, TrendingDown
 } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  PieChart as RePieChart, Pie, Cell, Legend
+} from 'recharts';
 
 interface ReportsProps {
   entries: CashEntry[];
   expenses: Expense[];
 }
 
+const formatMoney = (val: number) => 
+  val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 type PeriodType = 'Diário' | 'Semanal' | 'Mensal' | 'Anual';
+type ReportView = 'audit' | 'dre' | 'expenses';
+
+const COLORS_CHART = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316', '#64748b'];
 
 const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   const [periodType, setPeriodType] = useState<PeriodType>('Mensal');
+  const [reportView, setReportView] = useState<ReportView>('dre');
   const [baseDate, setBaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedShift, setSelectedShift] = useState<ShiftType | 'TODOS'>('TODOS');
+  const [selectedNature, setSelectedNature] = useState<string>('TODAS');
+  const [rates, setRates] = useState<CardRates>(db.getCardRates());
+  const [showRateSettings, setShowRateSettings] = useState(false);
+
+  const handleSaveRates = (e: React.FormEvent) => {
+    e.preventDefault();
+    db.saveCardRates(rates);
+    setShowRateSettings(false);
+  };
 
   const analytics = useMemo(() => {
     const selectedDate = new Date(baseDate + 'T12:00:00');
+    if (isNaN(selectedDate.getTime())) return null;
     
-    const filterFn = (itemDate: string, itemShift?: string) => {
+    const filterFn = (itemDate: string) => {
       const d = new Date(itemDate + 'T12:00:00');
-      
-      // Filtro de Turno
-      if (selectedShift !== 'TODOS' && itemShift && itemShift !== selectedShift) return false;
-
-      // Filtro de Período
+      if (isNaN(d.getTime())) return false;
       if (periodType === 'Diário') return d.toDateString() === selectedDate.toDateString();
-      if (periodType === 'Semanal') {
-        const start = new Date(selectedDate);
-        start.setDate(selectedDate.getDate() - selectedDate.getDay());
-        const end = new Date(start);
-        end.setDate(start.getDate() + 6);
-        return d >= start && d <= end;
-      }
       if (periodType === 'Mensal') return d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
       if (periodType === 'Anual') return d.getFullYear() === selectedDate.getFullYear();
-      
       return false;
     };
 
-    const periodEntries = entries.filter(e => filterFn(e.date, e.shift));
+    const periodEntries = entries.filter(e => filterFn(e.date));
     const periodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate));
 
-    const totalIn = periodEntries.reduce((acc, curr) => acc + (curr.cash + curr.pix + curr.credit + curr.debit), 0);
-    const totalOut = periodExpenses.reduce((acc, curr) => acc + curr.value, 0);
+    const faturamento = {
+      dinheiro: periodEntries.reduce((acc, e) => acc + e.cash, 0),
+      pix: periodEntries.reduce((acc, e) => acc + e.pix, 0),
+      debito: periodEntries.reduce((acc, e) => acc + e.debit, 0),
+      credito: periodEntries.reduce((acc, e) => acc + e.credit, 0),
+    };
 
-    const salesByDay: Record<string, number> = {};
-    periodEntries.forEach(e => {
-      salesByDay[e.date] = (salesByDay[e.date] || 0) + (e.cash + e.pix + e.credit + e.debit);
+    const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito;
+    const taxasMaquininha = (faturamento.debito * (rates.debit / 100)) + (faturamento.credito * (rates.credit / 100));
+    const impostos = periodExpenses.filter(e => e.nature === 'Impostos').reduce((acc, e) => acc + e.value, 0);
+    const receitaLiquida = receitaBruta - taxasMaquininha - impostos;
+
+    const cmv = periodExpenses.filter(e => e.nature === 'Custo da Mercadoria Vendida (CMV)').reduce((acc, e) => acc + e.value, 0);
+    const lucroBruto = receitaLiquida - cmv;
+
+    const despesasFixas = periodExpenses.filter(e => e.costType === 'Fixo').reduce((acc, e) => acc + e.value, 0);
+    const despesasVariaveisOutras = periodExpenses.filter(e => e.costType === 'Variável' && e.nature !== 'Custo da Mercadoria Vendida (CMV)' && e.nature !== 'Impostos').reduce((acc, e) => acc + e.value, 0);
+    
+    const lucroLiquido = lucroBruto - despesasFixas - despesasVariaveisOutras;
+    const margemLiquida = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
+    const ticketMedio = periodEntries.length > 0 ? receitaBruta / periodEntries.length : 0;
+
+    // Dados para Gráficos de Despesas
+    const expenseDataMap: Record<string, number> = {};
+    periodExpenses.forEach(exp => {
+      expenseDataMap[exp.nature] = (expenseDataMap[exp.nature] || 0) + exp.value;
     });
-    const bestDayDate = Object.keys(salesByDay).reduce((a, b) => salesByDay[a] > salesByDay[b] ? a : b, '');
-    const bestDayValue = bestDayDate ? salesByDay[bestDayDate] : 0;
+    
+    const expenseChartData = Object.entries(expenseDataMap)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
 
-    const salesByShift: Record<string, number> = { 'CAIXA 01 (MANHÃ)': 0, 'CAIXA 02 (TARDE)': 0, 'CAIXA 03 (NOITE)': 0 };
-    periodEntries.forEach(e => { salesByShift[e.shift] += (e.cash + e.pix + e.credit + e.debit); });
-    const bestShift = Object.keys(salesByShift).reduce((a, b) => salesByShift[a] > salesByShift[b] ? a : b, '');
-
-    const salesByWeek: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    periodEntries.forEach(e => {
-      const day = new Date(e.date + 'T12:00:00').getDate();
-      const weekNum = Math.ceil(day / 7);
-      salesByWeek[weekNum] = (salesByWeek[weekNum] || 0) + (e.cash + e.pix + e.credit + e.debit);
-    });
-    const bestWeek = Object.keys(salesByWeek).reduce((a, b) => salesByWeek[Number(a)] > salesByWeek[Number(b)] ? a : b, '1');
+    // Listagem filtrada para Auditoria
+    const auditItems = periodExpenses.filter(exp => selectedNature === 'TODAS' || exp.nature === selectedNature);
 
     return {
-      totalIn,
-      totalOut,
-      balance: totalIn - totalOut,
-      filteredEntries: periodEntries,
-      filteredExpenses: periodExpenses,
-      insights: {
-        bestDayDate,
-        bestDayValue,
-        bestShift,
-        bestWeek,
-        salesByShift
-      }
+      dre: {
+        receitaBruta, faturamento, taxasMaquininha, impostos, receitaLiquida,
+        cmv, lucroBruto, despesasFixas, despesasVariaveisOutras, lucroLiquido,
+        margemLiquida, ticketMedio
+      },
+      expenses: {
+        chart: expenseChartData,
+        total: periodExpenses.reduce((acc, e) => acc + e.value, 0)
+      },
+      audit: auditItems.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     };
-  }, [entries, expenses, periodType, baseDate, selectedShift]);
+  }, [entries, expenses, periodType, baseDate, rates, selectedNature]);
 
   const handleAdjustDate = (delta: number) => {
     const d = new Date(baseDate + 'T12:00:00');
     if (periodType === 'Diário') d.setDate(d.getDate() + delta);
-    else if (periodType === 'Semanal') d.setDate(d.getDate() + (delta * 7));
     else if (periodType === 'Mensal') d.setMonth(d.getMonth() + delta);
     else if (periodType === 'Anual') d.setFullYear(d.getFullYear() + delta);
     setBaseDate(d.toISOString().split('T')[0]);
   };
 
-  const handleExportCSV = () => {
-    const headers = ["Data", "Caixa", "Tipo Operacao", "Entrada (+)", "Saida (-)"];
-    const rows = [
-      ...analytics.filteredEntries.map(e => [
-        new Date(e.date + 'T12:00:00').toLocaleDateString('pt-BR'),
-        e.shift.split(' ')[1],
-        "Vendas de Balcao",
-        (e.cash + e.pix + e.credit + e.debit).toFixed(2),
-        "0.00"
-      ]),
-      ...analytics.filteredExpenses.map(e => [
-        new Date(e.dueDate + 'T12:00:00').toLocaleDateString('pt-BR'),
-        "ADMN",
-        e.description,
-        "0.00",
-        e.value.toFixed(2)
-      ])
-    ];
-
-    const csvContent = [headers, ...rows].map(e => e.join(";")).join("\n");
-    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `auditoria_bemestar_${periodType}_${baseDate}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportPDF = () => {
-    const originalTitle = document.title;
-    const dateStr = new Date().toISOString().split('T')[0];
-    // Altera o título do documento temporariamente para influenciar o nome do arquivo PDF sugerido pelo navegador
-    document.title = `relatorio_auditoria_${dateStr}`;
-    window.print();
-    document.title = originalTitle;
-  };
-
-  const formattedDateRange = () => {
+  const formattedLabel = () => {
     const d = new Date(baseDate + 'T12:00:00');
     if (periodType === 'Diário') return d.toLocaleDateString('pt-BR');
     if (periodType === 'Mensal') return d.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'});
-    if (periodType === 'Anual') return d.getFullYear().toString();
-    return baseDate;
+    return d.getFullYear().toString();
   };
+
+  if (!analytics) return null;
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden h-full">
-      {/* CABEÇALHO DE IMPRESSÃO (INVISÍVEL NA TELA) */}
-      <div className="hidden print:block border-b-4 border-slate-900 pb-4 mb-6">
-        <div className="flex justify-between items-end">
-          <div>
-            <h1 className="text-2xl font-black uppercase tracking-tighter text-slate-900">Relatório de Auditoria Financeira</h1>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Bem Estar - Sistema de Gestão</p>
-          </div>
-          <div className="text-right text-[10px] font-black uppercase text-slate-400">
-            Gerado em: {new Date().toLocaleString('pt-BR')}
-          </div>
-        </div>
-        <div className="flex gap-8 mt-4 pt-4 border-t border-slate-100">
-          <div>
-            <span className="text-[8px] font-black text-slate-400 uppercase block">Período Analisado</span>
-            <span className="text-xs font-bold uppercase">{periodType}: {formattedDateRange()}</span>
-          </div>
-          <div>
-            <span className="text-[8px] font-black text-slate-400 uppercase block">Terminal/Filtro</span>
-            <span className="text-xs font-bold uppercase">{selectedShift === 'TODOS' ? 'Todos os Caixas' : selectedShift}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* HEADER DE FILTROS AVANÇADOS */}
-      <div className="bg-white border border-slate-200 p-3 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0 shadow-sm no-print">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex bg-slate-100 p-1 rounded-lg">
-            {(['Diário', 'Semanal', 'Mensal', 'Anual'] as PeriodType[]).map(p => (
-              <button key={p} onClick={() => setPeriodType(p)} className={`px-3 py-1.5 rounded text-[9px] font-black uppercase transition-all ${periodType === p ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{p}</button>
+      {/* HEADER CONTROLS */}
+      <div className="bg-white border border-slate-200 p-3 flex flex-col lg:flex-row items-center justify-between gap-4 shrink-0 shadow-sm no-print rounded-2xl">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            {(['Diário', 'Mensal', 'Anual'] as PeriodType[]).map(p => (
+              <button key={p} onClick={() => setPeriodType(p)} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${periodType === p ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>{p}</button>
             ))}
           </div>
-
-          <div className="h-6 w-px bg-slate-200 hidden lg:block" />
-
+          
           <div className="flex items-center gap-2">
-             <button onClick={() => handleAdjustDate(-1)} className="p-2 bg-slate-50 border border-slate-200 rounded hover:bg-white"><ChevronLeft size={14}/></button>
-             <div className="px-3 py-1.5 bg-slate-900 text-white rounded font-mono font-bold text-[10px] min-w-[140px] text-center uppercase">
-                {formattedDateRange()}
+             <button onClick={() => handleAdjustDate(-1)} className="p-2 bg-slate-50 border border-slate-200 rounded-lg"><ChevronLeft size={14}/></button>
+             <div className="px-4 py-1.5 bg-slate-900 text-white rounded-lg font-mono font-bold text-[10px] min-w-[140px] text-center uppercase">
+                {formattedLabel()}
              </div>
-             <button onClick={() => handleAdjustDate(1)} className="p-2 bg-slate-50 border border-slate-200 rounded hover:bg-white"><ChevronRight size={14}/></button>
+             <button onClick={() => handleAdjustDate(1)} className="p-2 bg-slate-50 border border-slate-200 rounded-lg"><ChevronRight size={14}/></button>
           </div>
 
-          <div className="h-6 w-px bg-slate-200 hidden lg:block" />
-
-          <div className="flex items-center gap-2">
-            <Filter size={14} className="text-slate-400" />
-            <select 
-              className="bg-slate-50 border border-slate-200 rounded px-3 py-1.5 text-[10px] font-black uppercase outline-none focus:bg-white"
-              value={selectedShift}
-              onChange={(e) => setSelectedShift(e.target.value as any)}
-            >
-              <option value="TODOS">Todos os Caixas</option>
-              {SHIFTS.map(s => <option key={s} value={s}>{s.split(' ')[1]}</option>)}
-            </select>
+          <div className="flex bg-slate-100 p-1 rounded-xl">
+            <button onClick={() => setReportView('dre')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'dre' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}><PieChart size={14}/> DRE</button>
+            <button onClick={() => setReportView('expenses')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'expenses' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400'}`}><BarChart3 size={14}/> Gastos</button>
+            <button onClick={() => setReportView('audit')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'audit' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-400'}`}><ClipboardList size={14}/> Auditoria</button>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
-            onClick={handleExportCSV}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 text-slate-600 rounded font-black text-[10px] uppercase hover:bg-slate-50 transition-all active:scale-95"
-            title="Baixar Planilha CSV"
-          >
-            <Download size={14}/> CSV
-          </button>
-          <button 
-            onClick={handleExportPDF} 
-            className="flex items-center gap-2 px-4 py-2 bg-green-500 text-white rounded font-black text-[10px] uppercase shadow-md hover:bg-green-600 transition-all active:scale-95"
-            title="Baixar Relatório PDF"
-          >
-            <FileDown size={14}/> Baixar PDF
-          </button>
+          <button onClick={() => setShowRateSettings(!showRateSettings)} className="p-2 bg-white border border-slate-200 rounded-xl text-slate-500 hover:bg-slate-50"><Settings2 size={16}/></button>
+          <button onClick={() => window.print()} className="px-4 py-2 bg-slate-800 text-white rounded-xl font-black text-[10px] uppercase shadow-lg flex items-center gap-2"><FileDown size={14}/> PDF</button>
         </div>
       </div>
 
-      {/* PAINEL DE INSIGHTS */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 shrink-0">
-        <InsightCard 
-          label="Pico de Faturamento" 
-          value={`R$ ${analytics.insights.bestDayValue.toLocaleString('pt-BR')}`}
-          sub={analytics.insights.bestDayDate ? new Date(analytics.insights.bestDayDate + 'T12:00:00').toLocaleDateString('pt-BR') : '---'}
-          icon={<Trophy size={18}/>}
-          color="text-amber-600"
-          bgColor="bg-amber-50"
-        />
-        <InsightCard 
-          label="Melhor Terminal" 
-          value={analytics.insights.bestShift.split(' ')[1]}
-          sub={`${((analytics.insights.salesByShift[analytics.insights.bestShift] / (analytics.totalIn || 1)) * 100).toFixed(0)}% do volume total`}
-          icon={<Target size={18}/>}
-          color="text-blue-600"
-          bgColor="bg-blue-50"
-        />
-        <InsightCard 
-          label="Semana de Pico" 
-          value={`${analytics.insights.bestWeek}ª Semana`}
-          sub="Maior volume mensal"
-          icon={<BarChart2 size={18}/>}
-          color="text-purple-600"
-          bgColor="bg-purple-50"
-        />
-        <div className="bg-slate-900 p-4 flex flex-col justify-center border-l-4 border-green-500 shadow-sm">
-           <span className="text-[8px] font-black uppercase text-slate-400 tracking-widest">Resultado do Período</span>
-           <span className="text-xl font-mono font-black text-green-400 tracking-tighter">
-             R$ {analytics.balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}
-           </span>
+      {showRateSettings && (
+        <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xl no-print">
+          <form onSubmit={handleSaveRates} className="flex flex-col md:flex-row items-end gap-6">
+            <div className="flex-1 space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><Percent size={10}/> Taxa Débito (%)</label>
+              <input type="number" step="0.01" className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-sm" value={rates.debit} onChange={e => setRates({...rates, debit: parseFloat(e.target.value)})}/>
+            </div>
+            <div className="flex-1 space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest"><Percent size={10}/> Taxa Crédito (%)</label>
+              <input type="number" step="0.01" className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl font-mono font-bold text-sm" value={rates.credit} onChange={e => setRates({...rates, credit: parseFloat(e.target.value)})}/>
+            </div>
+            <button type="submit" className="h-10 px-8 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest">Salvar Taxas</button>
+          </form>
         </div>
-      </div>
+      )}
 
-      {/* GRADE DE AUDITORIA */}
-      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-auto custom-scrollbar">
-          <table className="w-full border-collapse">
-            <thead className="sticky top-0 bg-slate-100 z-10 shadow-sm">
-              <tr className="border-b border-slate-200">
-                <th className="px-6 py-3 text-left text-[9px] font-black text-slate-500 uppercase border-r border-slate-200">Data</th>
-                <th className="px-6 py-3 text-left text-[9px] font-black text-slate-500 uppercase border-r border-slate-200">Caixa</th>
-                <th className="px-6 py-3 text-left text-[9px] font-black text-slate-500 uppercase border-r border-slate-200">Tipo de Operação</th>
-                <th className="px-6 py-3 text-right text-[9px] font-black text-slate-500 uppercase border-r border-slate-200">Entrada (+)</th>
-                <th className="px-6 py-3 text-right text-[9px] font-black text-slate-500 uppercase">Saída (-)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {analytics.filteredEntries.map((e) => (
-                <tr key={e.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-3 text-[10px] font-mono font-bold border-r border-slate-100">
-                    {new Date(e.date + 'T12:00:00').toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-6 py-3 border-r border-slate-100">
-                    <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">{e.shift.split(' ')[1]}</span>
-                  </td>
-                  <td className="px-6 py-3 text-[10px] font-bold text-slate-500 border-r border-slate-100 uppercase">Movimento de Vendas</td>
-                  <td className="px-6 py-3 text-right text-[11px] font-mono font-black text-green-600 border-r border-slate-100 bg-green-50/20">
-                    R$ {(e.cash + e.pix + e.credit + e.debit).toFixed(2)}
-                  </td>
-                  <td className="px-6 py-3 text-right text-[11px] font-mono font-bold text-slate-300">---</td>
-                </tr>
-              ))}
-              
-              {analytics.filteredExpenses.map((e) => (
-                <tr key={e.id} className="hover:bg-slate-50">
-                  <td className="px-6 py-3 text-[10px] font-mono font-bold border-r border-slate-100">
-                    {new Date(e.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
-                  </td>
-                  <td className="px-6 py-3 border-r border-slate-100">
-                    <span className="text-[9px] font-black text-slate-300 uppercase italic">Administrativo</span>
-                  </td>
-                  <td className="px-6 py-3 text-[10px] font-bold text-slate-700 border-r border-slate-100 uppercase">{e.description}</td>
-                  <td className="px-6 py-3 text-right text-[11px] font-mono font-bold text-slate-300 border-r border-slate-100">---</td>
-                  <td className="px-6 py-3 text-right text-[11px] font-mono font-black text-red-600 bg-red-50/20">
-                    R$ {e.value.toFixed(2)}
-                  </td>
-                </tr>
-              ))}
+      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-3xl">
+        {/* FILTRO DE CATEGORIA PARA AUDITORIA E GASTOS */}
+        {(reportView === 'audit' || reportView === 'expenses') && (
+           <div className="p-4 border-b border-slate-100 flex items-center justify-between no-print bg-slate-50/50">
+             <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <Filter size={14} className="text-slate-400"/>
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Filtrar por Natureza:</span>
+                </div>
+                <select 
+                  className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase outline-none focus:border-blue-500"
+                  value={selectedNature}
+                  onChange={e => setSelectedNature(e.target.value)}
+                >
+                  <option value="TODAS">TODAS AS CATEGORIAS</option>
+                  {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+             </div>
+             <div className="text-[11px] font-black text-slate-700">
+               Pago no Período: <span className="text-red-600">{formatMoney(analytics.expenses.total)}</span>
+             </div>
+           </div>
+        )}
 
-              {(analytics.filteredEntries.length === 0 && analytics.filteredExpenses.length === 0) && (
-                <tr>
-                  <td colSpan={5} className="py-24 text-center text-[11px] font-black text-slate-200 uppercase tracking-[0.4em]">
-                    Nenhum dado analítico encontrado
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+        <div className="flex-1 overflow-auto custom-scrollbar p-6">
+          {reportView === 'dre' && (
+            <div className="max-w-4xl mx-auto space-y-8 animate-in fade-in">
+              <div className="flex flex-col gap-1 border-b pb-4">
+                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Demonstrativo de Resultado (DRE)</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Competência: {formattedLabel()}</p>
+              </div>
+
+              <div className="space-y-1">
+                <DREHeader label="1. FATURAMENTO BRUTO" value={analytics.dre.receitaBruta} />
+                <DRERow label="(+) Vendas em Espécie (Dinheiro)" value={analytics.dre.faturamento.dinheiro} indent />
+                <DRERow label="(+) Vendas via Pix" value={analytics.dre.faturamento.pix} indent />
+                <DRERow label="(+) Vendas Cartão de Débito" value={analytics.dre.faturamento.debito} indent />
+                <DRERow label="(+) Vendas Cartão de Crédito" value={analytics.dre.faturamento.credito} indent />
+                <DRERow label={`(-) Taxas Maquininha`} value={analytics.dre.taxasMaquininha} indent negative />
+                <DRERow label="(-) Impostos s/ Faturamento" value={analytics.dre.impostos} indent negative />
+                <DRESubtotal label="(=) RECEITA LÍQUIDA" value={analytics.dre.receitaLiquida} />
+              </div>
+
+              <div className="space-y-1 pt-4">
+                <DREHeader label="2. CUSTO DA MERCADORIA VENDIDA (CMV)" value={analytics.dre.cmv} negative />
+                <DRERow label="(-) Custo Real da Operação" value={analytics.dre.cmv} indent negative />
+                <DRESubtotal label="(=) LUCRO BRUTO" value={analytics.dre.lucroBruto} highlight />
+              </div>
+
+              <div className="space-y-1 pt-4">
+                <DREHeader label="3. DESPESAS OPERACIONAIS" value={analytics.dre.despesasFixas + analytics.dre.despesasVariaveisOutras} negative />
+                <DRERow label="(-) Despesas Fixas (Estrutura)" value={analytics.dre.despesasFixas} indent negative />
+                <DRERow label="(-) Outras Variáveis" value={analytics.dre.despesasVariaveisOutras} indent negative />
+              </div>
+
+              <div className="mt-12 p-10 bg-slate-900 rounded-[40px] text-white flex flex-col md:flex-row justify-between items-center shadow-2xl">
+                 <div className="flex flex-col gap-1">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest opacity-50">Linha de Chegada</span>
+                    <h4 className="text-4xl font-black uppercase tracking-tighter">LUCRO LÍQUIDO</h4>
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      <span className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-[10px] font-black uppercase">Margem: {analytics.dre.margemLiquida.toFixed(2)}%</span>
+                      <span className="bg-blue-500/20 text-blue-300 px-3 py-1 rounded-full text-[10px] font-black uppercase">Ticket Médio: {formatMoney(analytics.dre.ticketMedio)}</span>
+                    </div>
+                 </div>
+                 <div className="text-center md:text-right">
+                    <p className={`text-5xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {formatMoney(analytics.dre.lucroLiquido)}
+                    </p>
+                 </div>
+              </div>
+
+              <div className="mt-16 pt-12 border-t border-slate-200">
+                <div className="flex items-center gap-3 mb-8">
+                  <BookOpen className="text-blue-600" size={24} />
+                  <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Glossário de Indicadores</h4>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <GlossaryItem number="1" title="Faturamento Bruto" description="Volume total de vendas antes de qualquer desconto ou taxa." />
+                  <GlossaryItem number="2" title="CMV" description="Custo real das mercadorias que saíram do estoque no período." />
+                  <GlossaryItem number="3" title="Despesas Operacionais" description="Custos necessários para manter a loja aberta (aluguel, salários, energia)." />
+                  <GlossaryItem number="4" title="Margem Líquida" description="Qual a porcentagem de lucro real sobre cada venda realizada." />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {reportView === 'expenses' && (
+            <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* GRÁFICO DE PIZZA - MIX DE DESPESAS */}
+                <div className="bg-slate-50 border border-slate-200 p-6 rounded-3xl h-[400px] flex flex-col">
+                   <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+                     <PieChart size={16}/> Composição dos Gastos
+                   </h4>
+                   <div className="flex-1">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <RePieChart>
+                          <Pie 
+                            data={analytics.expenses.chart} 
+                            cx="50%" cy="50%" 
+                            outerRadius={100} 
+                            fill="#8884d8" 
+                            dataKey="value" 
+                            label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                            labelLine={false}
+                          >
+                            {analytics.expenses.chart.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} />
+                            ))}
+                          </Pie>
+                          <Tooltip formatter={(val: number) => formatMoney(val)} />
+                          <Legend wrapperStyle={{fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase'}} />
+                        </RePieChart>
+                     </ResponsiveContainer>
+                   </div>
+                </div>
+
+                {/* GRÁFICO DE BARRAS - MAIORES GASTOS */}
+                <div className="bg-slate-50 border border-slate-200 p-6 rounded-3xl h-[400px] flex flex-col">
+                   <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
+                     <TrendingDown size={16}/> Ranking por Natureza
+                   </h4>
+                   <div className="flex-1">
+                     <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={analytics.expenses.chart} layout="vertical">
+                          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
+                          <XAxis type="number" hide />
+                          <YAxis dataKey="name" type="category" fontSize={9} fontWeight="black" width={100} tickFormatter={(val) => val.toUpperCase()} />
+                          <Tooltip formatter={(val: number) => formatMoney(val)} cursor={{fill: '#f1f5f9'}} />
+                          <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={24}>
+                             {analytics.expenses.chart.map((entry, index) => (
+                               <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} />
+                             ))}
+                          </Bar>
+                        </BarChart>
+                     </ResponsiveContainer>
+                   </div>
+                </div>
+              </div>
+
+              {/* TABELA DE RESUMO POR CATEGORIA */}
+              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase">Categoria</th>
+                      <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">Impacto %</th>
+                      <th className="px-6 py-4 text-right text-[10px] font-black text-slate-500 uppercase">Total Pago R$</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analytics.expenses.chart.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS_CHART[idx % COLORS_CHART.length]}} />
+                            <span className="text-[11px] font-black text-slate-700 uppercase">{item.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="text-[10px] font-bold text-slate-400">
+                            {((item.value / analytics.expenses.total) * 100).toFixed(1)}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-slate-900">
+                          {formatMoney(item.value)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {reportView === 'audit' && (
+            <div className="overflow-auto animate-in fade-in">
+              <table className="w-full border-collapse">
+                <thead className="bg-slate-50 border-b">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Data Pago</th>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Descrição / Fornecedor</th>
+                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Natureza</th>
+                    <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">Tipo</th>
+                    <th className="px-6 py-4 text-right text-[10px] font-black text-red-600 uppercase">Valor Pago R$</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {analytics.audit.map((row, i) => (
+                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-6 py-4 text-[11px] font-mono font-bold text-slate-600">
+                        {new Date(row.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-[11px] font-black text-slate-800 uppercase">{row.supplier || row.description}</div>
+                        <div className="text-[9px] font-bold text-slate-400 uppercase">{row.description}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className="text-[9px] font-black px-2 py-0.5 bg-slate-100 text-slate-500 rounded uppercase">{row.nature}</span>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                         <span className={`text-[8px] font-black px-2 py-0.5 rounded ${row.costType === 'Fixo' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-700'}`}>{row.costType}</span>
+                      </td>
+                      <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-red-600">
+                        {formatMoney(row.value)}
+                      </td>
+                    </tr>
+                  ))}
+                  {analytics.audit.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="px-6 py-20 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
+                        Nenhum registro encontrado para os filtros selecionados
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 };
 
-const InsightCard = ({ label, value, sub, icon, color, bgColor }: any) => (
-  <div className="bg-white border border-slate-200 p-4 shadow-sm flex items-center gap-4 transition-all hover:border-slate-300">
-    <div className={`w-10 h-10 rounded flex items-center justify-center ${bgColor} ${color} shrink-0 shadow-sm`}>
-      {icon}
+const DREHeader = ({ label, value, negative }: any) => (
+  <div className="flex justify-between items-center py-2.5 border-b-2 border-slate-800">
+    <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">{label}</span>
+    <span className={`text-[11px] font-mono font-black ${negative ? 'text-red-600' : 'text-slate-900'}`}>{formatMoney(value)}</span>
+  </div>
+);
+
+const DRERow = ({ label, value, indent, negative }: any) => (
+  <div className={`flex justify-between items-center py-1.5 ${indent ? 'pl-6' : ''}`}>
+    <span className="text-[10px] font-bold text-slate-500 uppercase">{label}</span>
+    <span className={`text-[10px] font-mono font-bold ${negative ? 'text-red-500' : 'text-slate-600'}`}>
+      {negative && value > 0 ? '-' : ''} {formatMoney(value)}
+    </span>
+  </div>
+);
+
+const DRESubtotal = ({ label, value, highlight }: any) => (
+  <div className={`flex justify-between items-center py-4 px-6 rounded-2xl mt-2 ${highlight ? 'bg-blue-600 text-white shadow-xl shadow-blue-100' : 'bg-slate-100'}`}>
+    <span className={`text-[11px] font-black uppercase ${highlight ? 'text-white' : 'text-slate-700'}`}>{label}</span>
+    <span className={`text-base font-mono font-black ${highlight ? 'text-white' : (value >= 0 ? 'text-slate-900' : 'text-red-700')}`}>{formatMoney(value)}</span>
+  </div>
+);
+
+const GlossaryItem = ({ number, title, description }: any) => (
+  <div className="space-y-2 border-l-2 border-slate-100 pl-4 hover:border-blue-500 transition-colors">
+    <div className="flex items-center gap-2">
+      <span className="w-6 h-6 rounded-lg bg-slate-900 text-white flex items-center justify-center text-[10px] font-black shrink-0">{number}</span>
+      <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{title}</h5>
     </div>
-    <div className="min-w-0">
-      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{label}</p>
-      <p className={`text-sm font-black tracking-tight truncate ${color}`}>
-        {value}
-      </p>
-      <p className="text-[8px] font-bold text-slate-400 uppercase truncate mt-0.5">{sub}</p>
-    </div>
+    <p className="text-[10px] font-medium text-slate-500 leading-relaxed text-justify">{description}</p>
   </div>
 );
 

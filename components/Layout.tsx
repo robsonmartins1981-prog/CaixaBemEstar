@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { ICONS, COLORS } from '../constants';
-import { Menu, X, LayoutGrid, Calculator, FileUp } from 'lucide-react';
+import { Menu, X, LayoutGrid, Calculator, FileUp, Users } from 'lucide-react';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -16,6 +16,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
     { id: 'dashboard', label: 'Resumo GERAL', icon: <LayoutGrid size={20}/> },
     { id: 'entries', label: 'CONTROLE DE CAIXA', icon: <Calculator size={20}/> },
     { id: 'expenses', label: 'CONTAS A PAGAR', icon: ICONS.Expenses },
+    { id: 'suppliers', label: 'FORNECEDORES', icon: <Users size={20}/> },
     { id: 'reports', label: 'AUDITORIA', icon: ICONS.Reports },
     { id: 'import', label: 'IMPORTAR DADOS', icon: <FileUp size={20}/> },
   ];

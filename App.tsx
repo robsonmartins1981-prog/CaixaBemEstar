@@ -4,19 +4,22 @@ import Layout from './components/Layout';
 import Dashboard from './components/Dashboard';
 import CashEntryForm from './components/CashEntryForm';
 import AccountsPayable from './components/AccountsPayable';
+import Suppliers from './components/Suppliers';
 import Reports from './components/Reports';
 import ImportData from './components/ImportData';
 import { db } from './services/db';
-import { CashEntry, Expense } from './types';
+import { CashEntry, Expense, Supplier } from './types';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
   const loadData = () => {
     setEntries(db.getEntries());
     setExpenses(db.getExpenses());
+    setSuppliers(db.getSuppliers());
   };
 
   useEffect(() => {
@@ -31,6 +34,8 @@ const App: React.FC = () => {
         return <CashEntryForm entries={entries} onSuccess={loadData} />;
       case 'expenses':
         return <AccountsPayable expenses={expenses} onSuccess={loadData} />;
+      case 'suppliers':
+        return <Suppliers suppliers={suppliers} onSuccess={loadData} />;
       case 'reports':
         return <Reports entries={entries} expenses={expenses} />;
       case 'import':

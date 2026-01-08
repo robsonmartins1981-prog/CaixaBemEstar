@@ -3,33 +3,53 @@ export type ShiftType = 'CAIXA 01 (MANHÃ)' | 'CAIXA 02 (TARDE)' | 'CAIXA 03 (NO
 
 export interface CashEntry {
   id: string;
-  code: string; // Ex: 0001
+  code: string;
   date: string;
   shift: ShiftType;
   cash: number;
   credit: number;
   debit: number;
   pix: number;
-  sangria: number; // Novo campo para retiradas
+  sangria: number;
 }
 
-export type ExpenseCategory = 'Fornecedores' | 'Energia' | 'Pessoal' | 'Aluguel' | 'Outros';
+export type ExpenseNature = 
+  | 'Custo da Mercadoria Vendida (CMV)' 
+  | 'Frete/Logística'
+  | 'Embalagens'
+  | 'Impostos'
+  | 'Aluguel'
+  | 'Salários e Encargos Trabalhistas'
+  | 'Pró-labore'
+  | 'Utilidades'
+  | 'Marketing e Publicidade'
+  | 'Contabilidade'
+  | 'Manutenção e Limpeza'
+  | 'Sistemas de Gestão'
+  | 'Equipamentos'
+  | 'Outros';
+
+export type CostType = 'Fixo' | 'Variável';
 export type ExpenseStatus = 'Pendente' | 'Pago';
 
 export interface Expense {
   id: string;
   description: string;
+  supplier: string;
   dueDate: string;
   value: number;
-  category: ExpenseCategory;
+  nature: ExpenseNature;
+  costType: CostType;
   status: ExpenseStatus;
 }
 
-export interface UnifiedEntry {
+export interface Supplier {
   id: string;
-  date: string;
-  type: 'Entrada' | 'Saída';
-  description: string;
-  value: number;
-  originalData?: any;
+  name: string;
+  category: string;
+}
+
+export interface CardRates {
+  debit: number;
+  credit: number;
 }
