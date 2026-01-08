@@ -4,11 +4,11 @@ import { CashEntry, Expense, CardRates, ExpenseNature } from '../types';
 import { db } from '../services/db';
 import { NATURES } from '../constants';
 import { 
-  ChevronLeft, ChevronRight, FileDown, PieChart, ClipboardList, Settings2, Percent, BookOpen, Filter, BarChart3, TrendingDown
+  ChevronLeft, ChevronRight, FileDown, PieChart, ClipboardList, Settings2, Percent, BookOpen, Filter, BarChart3, TrendingDown, LayoutList, ArrowRight
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart as RePieChart, Pie, Cell, Legend
+  Cell, Legend
 } from 'recharts';
 
 interface ReportsProps {
@@ -82,8 +82,13 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       expenseDataMap[exp.nature] = (expenseDataMap[exp.nature] || 0) + exp.value;
     });
     
+    const expenseTotal = periodExpenses.reduce((acc, e) => acc + e.value, 0);
     const expenseChartData = Object.entries(expenseDataMap)
-      .map(([name, value]) => ({ name, value }))
+      .map(([name, value]) => ({ 
+        name, 
+        value,
+        percentage: expenseTotal > 0 ? (value / expenseTotal) * 100 : 0
+      }))
       .sort((a, b) => b.value - a.value);
 
     // Listagem filtrada para Auditoria
@@ -97,7 +102,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       },
       expenses: {
         chart: expenseChartData,
-        total: periodExpenses.reduce((acc, e) => acc + e.value, 0)
+        total: expenseTotal
       },
       audit: auditItems.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
     };
@@ -255,90 +260,104 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
           )}
 
           {reportView === 'expenses' && (
-            <div className="space-y-8 animate-in slide-in-from-bottom-4 duration-500">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* GRÁFICO DE PIZZA - MIX DE DESPESAS */}
-                <div className="bg-slate-50 border border-slate-200 p-6 rounded-3xl h-[400px] flex flex-col">
-                   <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-                     <PieChart size={16}/> Composição dos Gastos
-                   </h4>
-                   <div className="flex-1">
-                     <ResponsiveContainer width="100%" height="100%">
-                        <RePieChart>
-                          <Pie 
-                            data={analytics.expenses.chart} 
-                            cx="50%" cy="50%" 
-                            outerRadius={100} 
-                            fill="#8884d8" 
-                            dataKey="value" 
-                            label={({name, percent}) => `${name} (${(percent * 100).toFixed(0)}%)`}
-                            labelLine={false}
-                          >
-                            {analytics.expenses.chart.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} />
-                            ))}
-                          </Pie>
-                          <Tooltip formatter={(val: number) => formatMoney(val)} />
-                          <Legend wrapperStyle={{fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase'}} />
-                        </RePieChart>
-                     </ResponsiveContainer>
-                   </div>
+            <div className="max-w-5xl mx-auto space-y-10 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="flex flex-col gap-2">
+                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Composição dos Gastos</h3>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Análise de custos fixos e variáveis por categoria</p>
+              </div>
+
+              {/* GRÁFICO DE BARRAS REFAZIDO - COMPOSIÇÃO DE GASTOS */}
+              <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm flex flex-col gap-8">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
+                      <BarChart3 size={20}/>
+                    </div>
+                    <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Ranking de Investimento por Natureza</span>
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
+                    Total em {formattedLabel()}: <span className="text-slate-900 font-black">{formatMoney(analytics.expenses.total)}</span>
+                  </div>
                 </div>
 
-                {/* GRÁFICO DE BARRAS - MAIORES GASTOS */}
-                <div className="bg-slate-50 border border-slate-200 p-6 rounded-3xl h-[400px] flex flex-col">
-                   <h4 className="text-[11px] font-black text-slate-500 uppercase tracking-widest mb-6 flex items-center gap-2">
-                     <TrendingDown size={16}/> Ranking por Natureza
-                   </h4>
-                   <div className="flex-1">
-                     <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={analytics.expenses.chart} layout="vertical">
-                          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#e2e8f0" />
-                          <XAxis type="number" hide />
-                          <YAxis dataKey="name" type="category" fontSize={9} fontWeight="black" width={100} tickFormatter={(val) => val.toUpperCase()} />
-                          <Tooltip formatter={(val: number) => formatMoney(val)} cursor={{fill: '#f1f5f9'}} />
-                          <Bar dataKey="value" fill="#3b82f6" radius={[0, 4, 4, 0]} barSize={24}>
-                             {analytics.expenses.chart.map((entry, index) => (
-                               <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} />
-                             ))}
-                          </Bar>
-                        </BarChart>
-                     </ResponsiveContainer>
-                   </div>
+                <div className="h-[500px] w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart 
+                      data={analytics.expenses.chart} 
+                      layout="vertical" 
+                      margin={{ left: 40, right: 40, top: 10, bottom: 10 }}
+                    >
+                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                      <XAxis type="number" hide />
+                      <YAxis 
+                        dataKey="name" 
+                        type="category" 
+                        fontSize={9} 
+                        fontWeight="black" 
+                        width={150} 
+                        tickFormatter={(val) => val.toUpperCase()} 
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip 
+                        formatter={(val: number) => formatMoney(val)} 
+                        cursor={{fill: '#f8fafc', radius: 8}} 
+                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}}
+                      />
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
+                        {analytics.expenses.chart.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} fillOpacity={0.85} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* TABELA DE RESUMO POR CATEGORIA */}
-              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-50 border-b">
-                    <tr>
-                      <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase">Categoria</th>
-                      <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">Impacto %</th>
-                      <th className="px-6 py-4 text-right text-[10px] font-black text-slate-500 uppercase">Total Pago R$</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {analytics.expenses.chart.map((item, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-3 h-3 rounded-full" style={{backgroundColor: COLORS_CHART[idx % COLORS_CHART.length]}} />
-                            <span className="text-[11px] font-black text-slate-700 uppercase">{item.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <span className="text-[10px] font-bold text-slate-400">
-                            {((item.value / analytics.expenses.total) * 100).toFixed(1)}%
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-slate-900">
-                          {formatMoney(item.value)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              {/* TABELA DE RESUMO DETALHADO */}
+              <div className="grid grid-cols-1 gap-4">
+                 <div className="bg-slate-50 border border-slate-200 rounded-[24px] overflow-hidden">
+                    <div className="p-4 bg-white border-b border-slate-200 flex items-center gap-2">
+                       <LayoutList size={16} className="text-slate-400"/>
+                       <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Tabela de Participação</span>
+                    </div>
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className="bg-slate-50">
+                          <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Natureza</th>
+                          <th className="px-6 py-4 text-center text-[9px] font-black text-slate-400 uppercase tracking-widest">Participação (%)</th>
+                          <th className="px-6 py-4 text-right text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor Investido</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {analytics.expenses.chart.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
+                            <td className="px-6 py-4 flex items-center gap-4">
+                              <div className="w-2 h-6 rounded-full" style={{backgroundColor: COLORS_CHART[idx % COLORS_CHART.length]}} />
+                              <div>
+                                <p className="text-[11px] font-black text-slate-700 uppercase leading-none mb-1">{item.name}</p>
+                                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <span className="text-[8px] font-bold text-slate-400 uppercase">Ver detalhes</span>
+                                  <ArrowRight size={10} className="text-slate-300"/>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col items-center gap-1">
+                                <span className="text-[10px] font-black text-slate-900">{item.percentage.toFixed(1)}%</span>
+                                <div className="w-24 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                   <div className="h-full bg-slate-400" style={{ width: `${item.percentage}%` }} />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <span className="text-[12px] font-mono font-black text-slate-900">{formatMoney(item.value)}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                 </div>
               </div>
             </div>
           )}

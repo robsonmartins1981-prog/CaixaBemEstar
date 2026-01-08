@@ -20,7 +20,8 @@ export const db = {
   
   getCardRates: (): CardRates => {
     const data = localStorage.getItem(KEYS.RATES);
-    return data ? JSON.parse(data) : { debit: 1.6, credit: 3.2 };
+    // Padrão solicitado: Débito 0.8% e Crédito 2.8%
+    return data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
   },
 
   saveCardRates: (rates: CardRates) => {
