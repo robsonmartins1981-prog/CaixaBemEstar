@@ -24,6 +24,7 @@ export const NATURES = [
   'Manutenção e Limpeza',
   'Sistemas de Gestão',
   'Equipamentos',
+  'Lanchonete',
   'Outros'
 ] as const;
 

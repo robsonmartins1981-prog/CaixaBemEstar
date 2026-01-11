@@ -4,11 +4,11 @@ import { CashEntry, Expense, CardRates, ExpenseNature } from '../types';
 import { db } from '../services/db';
 import { NATURES } from '../constants';
 import { 
-  ChevronLeft, ChevronRight, FileDown, PieChart, ClipboardList, Settings2, Percent, BookOpen, Filter, BarChart3, TrendingDown, LayoutList, ArrowRight
+  ChevronLeft, ChevronRight, FileDown, PieChart, ClipboardList, Settings2, Percent, BookOpen, Filter, BarChart3, TrendingDown, LayoutList, ArrowRight, CheckSquare, Square, RefreshCcw, TrendingUp, Activity
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Cell, Legend
+  Cell, Legend, LineChart, Line, Area
 } from 'recharts';
 
 interface ReportsProps {
@@ -29,6 +29,10 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   const [reportView, setReportView] = useState<ReportView>('dre');
   const [baseDate, setBaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedNature, setSelectedNature] = useState<string>('TODAS');
+  
+  // Filtros múltiplos para a aba de Gastos
+  const [expenseFilters, setExpenseFilters] = useState<string[]>(Array.from(NATURES));
+  
   const [rates, setRates] = useState<CardRates>(db.getCardRates());
   const [showRateSettings, setShowRateSettings] = useState(false);
 
@@ -37,6 +41,17 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     db.saveCardRates(rates);
     setShowRateSettings(false);
   };
+
+  const toggleExpenseFilter = (nature: string) => {
+    setExpenseFilters(prev => 
+      prev.includes(nature) 
+        ? prev.filter(n => n !== nature) 
+        : [...prev, nature]
+    );
+  };
+
+  const selectAllFilters = () => setExpenseFilters(Array.from(NATURES));
+  const deselectAllFilters = () => setExpenseFilters([]);
 
   const analytics = useMemo(() => {
     const selectedDate = new Date(baseDate + 'T12:00:00');
@@ -76,18 +91,42 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const margemLiquida = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
     const ticketMedio = periodEntries.length > 0 ? receitaBruta / periodEntries.length : 0;
 
-    // Dados para Gráficos de Despesas
+    // Histórico de 12 meses para o gráfico de auditoria
+    const profitabilityTrend = [];
+    const trendEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
+    
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(trendEnd.getFullYear(), trendEnd.getMonth() - i, 1);
+      const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      
+      const mEntries = entries.filter(e => e.date.startsWith(mKey));
+      const mExpenses = expenses.filter(e => e.status === 'Pago' && e.dueDate.startsWith(mKey));
+      
+      const mBruto = mEntries.reduce((acc, e) => acc + (e.cash + e.pix + e.credit + e.debit), 0);
+      const mTaxas = mEntries.reduce((acc, e) => acc + (e.debit * (rates.debit/100) + e.credit * (rates.credit/100)), 0);
+      const mPago = mExpenses.reduce((acc, e) => acc + e.value, 0);
+      
+      profitabilityTrend.push({
+        name: d.toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' }),
+        lucro: mBruto - mTaxas - mPago
+      });
+    }
+
+    // Dados para Gráficos de Despesas (respeitando os filtros de natureza da UI de Gastos)
+    const filteredPeriodExpenses = periodExpenses.filter(e => expenseFilters.includes(e.nature));
     const expenseDataMap: Record<string, number> = {};
-    periodExpenses.forEach(exp => {
+    filteredPeriodExpenses.forEach(exp => {
       expenseDataMap[exp.nature] = (expenseDataMap[exp.nature] || 0) + exp.value;
     });
     
-    const expenseTotal = periodExpenses.reduce((acc, e) => acc + e.value, 0);
+    const expenseTotalFiltered = filteredPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
+    const expenseTotalUnfiltered = periodExpenses.reduce((acc, e) => acc + e.value, 0);
+
     const expenseChartData = Object.entries(expenseDataMap)
       .map(([name, value]) => ({ 
         name, 
         value,
-        percentage: expenseTotal > 0 ? (value / expenseTotal) * 100 : 0
+        percentage: expenseTotalFiltered > 0 ? (value / expenseTotalFiltered) * 100 : 0
       }))
       .sort((a, b) => b.value - a.value);
 
@@ -102,11 +141,15 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       },
       expenses: {
         chart: expenseChartData,
-        total: expenseTotal
+        totalFiltered: expenseTotalFiltered,
+        totalUnfiltered: expenseTotalUnfiltered
       },
-      audit: auditItems.sort((a, b) => a.dueDate.localeCompare(b.dueDate))
+      audit: {
+        items: auditItems.sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+        trend: profitabilityTrend
+      }
     };
-  }, [entries, expenses, periodType, baseDate, rates, selectedNature]);
+  }, [entries, expenses, periodType, baseDate, rates, selectedNature, expenseFilters]);
 
   const handleAdjustDate = (delta: number) => {
     const d = new Date(baseDate + 'T12:00:00');
@@ -174,8 +217,8 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       )}
 
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-3xl">
-        {/* FILTRO DE CATEGORIA PARA AUDITORIA E GASTOS */}
-        {(reportView === 'audit' || reportView === 'expenses') && (
+        {/* FILTRO DE CATEGORIA PARA AUDITORIA (Simples) */}
+        {(reportView === 'audit') && (
            <div className="p-4 border-b border-slate-100 flex items-center justify-between no-print bg-slate-50/50">
              <div className="flex items-center gap-4">
                 <div className="flex items-center gap-2">
@@ -192,7 +235,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
                 </select>
              </div>
              <div className="text-[11px] font-black text-slate-700">
-               Pago no Período: <span className="text-red-600">{formatMoney(analytics.expenses.total)}</span>
+               Total Pago (Auditado): <span className="text-red-600">{formatMoney(analytics.expenses.totalUnfiltered)}</span>
              </div>
            </div>
         )}
@@ -260,150 +303,260 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
           )}
 
           {reportView === 'expenses' && (
-            <div className="max-w-5xl mx-auto space-y-10 animate-in slide-in-from-bottom-4 duration-500">
-              <div className="flex flex-col gap-2">
-                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Composição dos Gastos</h3>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Análise de custos fixos e variáveis por categoria</p>
-              </div>
-
-              {/* GRÁFICO DE BARRAS REFAZIDO - COMPOSIÇÃO DE GASTOS */}
-              <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm flex flex-col gap-8">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
-                      <BarChart3 size={20}/>
-                    </div>
-                    <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Ranking de Investimento por Natureza</span>
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-2">
-                    Total em {formattedLabel()}: <span className="text-slate-900 font-black">{formatMoney(analytics.expenses.total)}</span>
-                  </div>
+            <div className="max-w-6xl mx-auto space-y-8 animate-in slide-in-from-bottom-4 duration-500">
+              <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
+                <div>
+                  <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Composição dos Gastos</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Selecione as naturezas para analisar a proporção de investimento</p>
                 </div>
-
-                <div className="h-[500px] w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart 
-                      data={analytics.expenses.chart} 
-                      layout="vertical" 
-                      margin={{ left: 40, right: 40, top: 10, bottom: 10 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
-                      <XAxis type="number" hide />
-                      <YAxis 
-                        dataKey="name" 
-                        type="category" 
-                        fontSize={9} 
-                        fontWeight="black" 
-                        width={150} 
-                        tickFormatter={(val) => val.toUpperCase()} 
-                        axisLine={false}
-                        tickLine={false}
-                      />
-                      <Tooltip 
-                        formatter={(val: number) => formatMoney(val)} 
-                        cursor={{fill: '#f8fafc', radius: 8}} 
-                        contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}}
-                      />
-                      <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={28}>
-                        {analytics.expenses.chart.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} fillOpacity={0.85} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
+                <div className="flex flex-wrap gap-2 no-print">
+                   <button 
+                    onClick={selectAllFilters}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase hover:bg-slate-200 transition-all"
+                   >
+                     <CheckSquare size={12}/> Selecionar Tudo
+                   </button>
+                   <button 
+                    onClick={deselectAllFilters}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-[9px] font-black uppercase hover:bg-slate-200 transition-all"
+                   >
+                     <Square size={12}/> Limpar Seleção
+                   </button>
                 </div>
               </div>
 
-              {/* TABELA DE RESUMO DETALHADO */}
-              <div className="grid grid-cols-1 gap-4">
-                 <div className="bg-slate-50 border border-slate-200 rounded-[24px] overflow-hidden">
-                    <div className="p-4 bg-white border-b border-slate-200 flex items-center gap-2">
-                       <LayoutList size={16} className="text-slate-400"/>
-                       <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Tabela de Participação</span>
+              {/* PAINEL DE FILTROS POR TAGS */}
+              <div className="bg-white border border-slate-200 p-6 rounded-[24px] shadow-sm no-print">
+                <div className="flex flex-wrap gap-2">
+                   {NATURES.map(n => {
+                     const isSelected = expenseFilters.includes(n);
+                     return (
+                       <button
+                         key={n}
+                         onClick={() => toggleExpenseFilter(n)}
+                         className={`px-3 py-1.5 rounded-full text-[9px] font-bold uppercase transition-all border ${
+                           isSelected 
+                            ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-100' 
+                            : 'bg-white border-slate-200 text-slate-400 hover:border-slate-300'
+                         }`}
+                       >
+                         {n}
+                       </button>
+                     );
+                   })}
+                </div>
+              </div>
+
+              {/* CONTEÚDO DO GRÁFICO E RESUMO */}
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                
+                {/* GRÁFICO RANKING */}
+                <div className="xl:col-span-7 bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm flex flex-col gap-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-orange-100 text-orange-600 rounded-xl">
+                        <BarChart3 size={20}/>
+                      </div>
+                      <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">Ranking Filtrado</span>
                     </div>
-                    <table className="w-full text-left">
-                      <thead>
-                        <tr className="bg-slate-50">
-                          <th className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">Natureza</th>
-                          <th className="px-6 py-4 text-center text-[9px] font-black text-slate-400 uppercase tracking-widest">Participação (%)</th>
-                          <th className="px-6 py-4 text-right text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor Investido</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 bg-white">
-                        {analytics.expenses.chart.map((item, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
-                            <td className="px-6 py-4 flex items-center gap-4">
-                              <div className="w-2 h-6 rounded-full" style={{backgroundColor: COLORS_CHART[idx % COLORS_CHART.length]}} />
-                              <div>
-                                <p className="text-[11px] font-black text-slate-700 uppercase leading-none mb-1">{item.name}</p>
-                                <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <span className="text-[8px] font-bold text-slate-400 uppercase">Ver detalhes</span>
-                                  <ArrowRight size={10} className="text-slate-300"/>
+                  </div>
+
+                  <div className="h-[550px] w-full">
+                    {analytics.expenses.chart.length > 0 ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart 
+                          data={analytics.expenses.chart} 
+                          layout="vertical" 
+                          margin={{ left: 20, right: 40, top: 0, bottom: 0 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                          <XAxis type="number" hide />
+                          <YAxis 
+                            dataKey="name" 
+                            type="category" 
+                            fontSize={9} 
+                            fontWeight="black" 
+                            width={160} 
+                            tickFormatter={(val) => val.toUpperCase()} 
+                            axisLine={false}
+                            tickLine={false}
+                          />
+                          <Tooltip 
+                            formatter={(val: number) => formatMoney(val)} 
+                            cursor={{fill: '#f8fafc', radius: 8}} 
+                            contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold'}}
+                          />
+                          <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={26}>
+                            {analytics.expenses.chart.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={COLORS_CHART[index % COLORS_CHART.length]} fillOpacity={0.85} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 gap-4">
+                        <RefreshCcw size={48} className="animate-spin-slow opacity-20"/>
+                        <p className="text-[10px] font-black uppercase tracking-widest">Nenhuma categoria selecionada ou sem dados</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* TABELA DE PARTICIPAÇÃO E TOTALIZADORES */}
+                <div className="xl:col-span-5 flex flex-col gap-6">
+                  
+                  <div className="bg-slate-900 p-8 rounded-[32px] text-white shadow-xl flex flex-col justify-between overflow-hidden relative group">
+                    <div className="absolute -bottom-4 -right-4 opacity-5 group-hover:opacity-10 transition-all rotate-12">
+                      <TrendingDown size={140}/>
+                    </div>
+                    <div className="relative z-10">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Exibido (Filtro)</p>
+                      <h4 className="text-3xl font-mono font-black text-orange-400">{formatMoney(analytics.expenses.totalFiltered)}</h4>
+                      <div className="mt-4 pt-4 border-t border-white/10 flex justify-between items-center">
+                        <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Total Geral do Período</span>
+                        <span className="text-[11px] font-black text-slate-300">{formatMoney(analytics.expenses.totalUnfiltered)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden flex-1 shadow-sm flex flex-col">
+                    <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                       <div className="flex items-center gap-2">
+                         <LayoutList size={16} className="text-slate-400"/>
+                         <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">Detalhamento</span>
+                       </div>
+                    </div>
+                    <div className="flex-1 overflow-auto custom-scrollbar">
+                      <table className="w-full text-left">
+                        <tbody className="divide-y divide-slate-100">
+                          {analytics.expenses.chart.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50 transition-colors group">
+                              <td className="px-5 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-1.5 h-6 rounded-full shrink-0" style={{backgroundColor: COLORS_CHART[idx % COLORS_CHART.length]}} />
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-black text-slate-700 uppercase truncate">{item.name}</p>
+                                    <div className="flex items-center gap-3 mt-1">
+                                      <div className="w-20 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                        <div className="h-full bg-slate-400" style={{ width: `${item.percentage}%` }} />
+                                      </div>
+                                      <span className="text-[8px] font-black text-slate-400">{item.percentage.toFixed(1)}%</span>
+                                    </div>
+                                  </div>
                                 </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4">
-                              <div className="flex flex-col items-center gap-1">
-                                <span className="text-[10px] font-black text-slate-900">{item.percentage.toFixed(1)}%</span>
-                                <div className="w-24 h-1 bg-slate-100 rounded-full overflow-hidden">
-                                   <div className="h-full bg-slate-400" style={{ width: `${item.percentage}%` }} />
-                                </div>
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <span className="text-[12px] font-mono font-black text-slate-900">{formatMoney(item.value)}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                 </div>
+                              </td>
+                              <td className="px-5 py-4 text-right">
+                                <span className="text-[11px] font-mono font-black text-slate-900">{formatMoney(item.value)}</span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                </div>
               </div>
             </div>
           )}
 
           {reportView === 'audit' && (
-            <div className="overflow-auto animate-in fade-in">
-              <table className="w-full border-collapse">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Data Pago</th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Descrição / Fornecedor</th>
-                    <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Natureza</th>
-                    <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">Tipo</th>
-                    <th className="px-6 py-4 text-right text-[10px] font-black text-red-600 uppercase">Valor Pago R$</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {analytics.audit.map((row, i) => (
-                    <tr key={i} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4 text-[11px] font-mono font-bold text-slate-600">
-                        {new Date(row.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-[11px] font-black text-slate-800 uppercase">{row.supplier || row.description}</div>
-                        <div className="text-[9px] font-bold text-slate-400 uppercase">{row.description}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-[9px] font-black px-2 py-0.5 bg-slate-100 text-slate-500 rounded uppercase">{row.nature}</span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                         <span className={`text-[8px] font-black px-2 py-0.5 rounded ${row.costType === 'Fixo' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-700'}`}>{row.costType}</span>
-                      </td>
-                      <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-red-600">
-                        {formatMoney(row.value)}
-                      </td>
-                    </tr>
-                  ))}
-                  {analytics.audit.length === 0 && (
+            <div className="flex flex-col gap-8 animate-in fade-in">
+              {/* NOVO GRÁFICO DE TENDÊNCIA DE LUCRATIVIDADE */}
+              <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm flex flex-col gap-6">
+                <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-3">
+                      <div className="p-2.5 bg-green-100 text-green-600 rounded-xl">
+                        <TrendingUp size={20}/>
+                      </div>
+                      <div>
+                        <h4 className="text-[11px] font-black text-slate-800 uppercase tracking-widest leading-none">Saúde Financeira: Últimos 12 Meses</h4>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1 tracking-tighter">Lucro Líquido Estimado (Faturamento - Todas as Despesas)</p>
+                      </div>
+                   </div>
+                   <Activity size={16} className="text-slate-200"/>
+                </div>
+
+                <div className="h-[300px] w-full mt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={analytics.audit.trend} margin={{ top: 10, right: 30, left: 20, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis 
+                        dataKey="name" 
+                        fontSize={9} 
+                        fontWeight="black" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        dy={10}
+                      />
+                      <YAxis 
+                        fontSize={9} 
+                        fontWeight="black" 
+                        axisLine={false} 
+                        tickLine={false} 
+                        tickFormatter={(v) => `R$ ${v >= 1000 ? (v/1000)+'k' : v}`}
+                      />
+                      <Tooltip 
+                        formatter={(val: number) => formatMoney(val)}
+                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', fontSize: '11px', fontWeight: 'bold' }}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="lucro" 
+                        stroke="#10b981" 
+                        strokeWidth={4} 
+                        dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} 
+                        activeDot={{ r: 6, strokeWidth: 0 }}
+                        animationDuration={1500}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+
+              {/* LISTAGEM DE AUDITORIA */}
+              <div className="overflow-auto bg-slate-50/50 rounded-2xl border border-slate-100">
+                <table className="w-full border-collapse">
+                  <thead className="bg-slate-50 border-b">
                     <tr>
-                      <td colSpan={5} className="px-6 py-20 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
-                        Nenhum registro encontrado para os filtros selecionados
-                      </td>
+                      <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Data Pago</th>
+                      <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Descrição / Fornecedor</th>
+                      <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Natureza</th>
+                      <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase">Tipo</th>
+                      <th className="px-6 py-4 text-right text-[10px] font-black text-red-600 uppercase">Valor Pago R$</th>
                     </tr>
-                  )}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {analytics.audit.items.map((row, i) => (
+                      <tr key={i} className="hover:bg-white transition-colors">
+                        <td className="px-6 py-4 text-[11px] font-mono font-bold text-slate-600">
+                          {new Date(row.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-[11px] font-black text-slate-800 uppercase">{row.supplier || row.description}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase">{row.description}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="text-[9px] font-black px-2 py-0.5 bg-white border border-slate-100 text-slate-500 rounded uppercase">{row.nature}</span>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                           <span className={`text-[8px] font-black px-2 py-0.5 rounded ${row.costType === 'Fixo' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-700'}`}>{row.costType}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-red-600">
+                          {formatMoney(row.value)}
+                        </td>
+                      </tr>
+                    ))}
+                    {analytics.audit.items.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-20 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest italic">
+                          Nenhum registro encontrado para os filtros selecionados
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

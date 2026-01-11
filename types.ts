@@ -27,6 +27,7 @@ export type ExpenseNature =
   | 'Manutenção e Limpeza'
   | 'Sistemas de Gestão'
   | 'Equipamentos'
+  | 'Lanchonete'
   | 'Outros';
 
 export type CostType = 'Fixo' | 'Variável';
