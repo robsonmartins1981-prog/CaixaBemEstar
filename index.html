@@ -42,42 +42,44 @@
       @media print {
         @page {
           size: A4;
-          margin: 15mm;
+          margin: 10mm;
         }
-        aside, nav, button, .no-print {
+        body { background: white !important; }
+        aside, nav, header, button, .no-print, [role="button"] {
           display: none !important;
         }
         main {
           margin: 0 !important;
           padding: 0 !important;
           background: white !important;
+          overflow: visible !important;
         }
-        .max-w-\[1500px\] {
+        .flex, .grid {
+          display: block !important;
+        }
+        .overflow-hidden, .overflow-auto {
+          overflow: visible !important;
+        }
+        .max-w-\[1500px\], .max-w-4xl {
           max-width: 100% !important;
           width: 100% !important;
         }
-        .bg-\[#F8FAFC\] {
-          background: white !important;
+        .bg-slate-900 {
+          background-color: #f8fafc !important;
+          color: black !important;
+          border: 2px solid #000 !important;
         }
+        .text-white { color: black !important; }
         .shadow-subtle, .shadow-subtle-lg, .shadow-lg, .shadow-2xl {
           box-shadow: none !important;
-          border: 1px solid #f1f5f9 !important;
+          border: 1px solid #e2e8f0 !important;
         }
-        .rounded-\[48px\], .rounded-\[40px\], .rounded-\[32px\] {
-          border-radius: 12px !important;
+        .recharts-responsive-container {
+          width: 100% !important;
+          height: 300px !important;
         }
-        .animate-in {
-          animation: none !important;
-        }
-        table {
-          page-break-inside: auto;
-        }
-        tr {
-          page-break-inside: avoid;
-          page-break-after: auto;
-        }
-        thead {
-          display: table-header-group;
+        canvas {
+          max-width: 100% !important;
         }
       }
     </style>

@@ -160,6 +160,15 @@ export const db = {
     localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
   },
 
+  updateSupplier: (id: string, updatedSupplier: Omit<Supplier, 'id'>) => {
+    const suppliers = db.getSuppliers();
+    const index = suppliers.findIndex(s => s.id === id);
+    if (index !== -1) {
+      suppliers[index] = { ...suppliers[index], ...updatedSupplier };
+      localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+    }
+  },
+
   deleteSupplier: (id: string) => {
     const suppliers = db.getSuppliers().filter(s => s.id !== id);
     localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));

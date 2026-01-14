@@ -48,6 +48,9 @@ export interface Supplier {
   id: string;
   name: string;
   category: string;
+  contactName?: string;
+  contactPhone?: string;
+  contactEmail?: string;
 }
 
 export interface CardRates {

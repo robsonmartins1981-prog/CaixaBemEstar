@@ -1,9 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
-import { Supplier } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Supplier, Expense } from '../types';
 import { db } from '../services/db';
 import { NATURES } from '../constants';
-import { Plus, Trash2, UserPlus, List, Search, X } from 'lucide-react';
+import { Plus, Trash2, UserPlus, List, Search, ArrowUpDown, ChevronUp, ChevronDown, Edit2, X, Phone, Mail, User } from 'lucide-react';
+import ConfirmationModal from './ConfirmationModal';
 
 interface SuppliersProps {
   onSuccess: () => void;
@@ -11,80 +12,233 @@ interface SuppliersProps {
 }
 
 const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingSupplier, setDeletingSupplier] = useState<Supplier | null>(null);
+  const [errorModal, setErrorModal] = useState<{title: string, message: string} | null>(null);
+  
   const [formData, setFormData] = useState<Omit<Supplier, 'id'>>({
     name: '',
-    category: 'Custo da Mercadoria Vendida (CMV)'
+    category: 'Outros',
+    contactName: '',
+    contactPhone: '',
+    contactEmail: ''
   });
   const [searchTerm, setSearchTerm] = useState('');
+  const [sortConfig, setSortConfig] = useState<{ key: keyof Supplier, direction: 'asc' | 'desc' } | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) return;
+
+    if (editingId) {
+      db.updateSupplier(editingId, formData);
+    } else {
+      db.saveSupplier(formData);
+    }
     
-    db.saveSupplier(formData);
-    setFormData({ name: '', category: 'Custo da Mercadoria Vendida (CMV)' });
+    resetForm();
     onSuccess();
   };
 
-  const filteredSuppliers = suppliers.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.category.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleEdit = (supplier: Supplier) => {
+    setEditingId(supplier.id);
+    setFormData({
+      name: supplier.name,
+      category: supplier.category,
+      contactName: supplier.contactName || '',
+      contactPhone: supplier.contactPhone || '',
+      contactEmail: supplier.contactEmail || ''
+    });
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setFormData({ name: '', category: 'Outros', contactName: '', contactPhone: '', contactEmail: '' });
+  };
+
+  const confirmDelete = () => {
+    if (!deletingSupplier) return;
+    
+    // Regra de Negócio: Verificar se existem contas a pagar para este fornecedor
+    const expenses = db.getExpenses();
+    const hasExpenses = expenses.some(exp => exp.supplier.toLowerCase() === deletingSupplier.name.toLowerCase());
+    
+    if (hasExpenses) {
+      setErrorModal({
+        title: "Bloqueio de Segurança",
+        message: `Não é possível excluir o fornecedor "${deletingSupplier.name}" pois existem títulos (pagos ou pendentes) vinculados a ele no Contas a Pagar.`
+      });
+      setDeletingSupplier(null);
+      return;
+    }
+
+    db.deleteSupplier(deletingSupplier.id);
+    onSuccess();
+    setDeletingSupplier(null);
+  };
+
+  // Fix: Implemented handleSort function to resolve the "Cannot find name 'handleSort'" error.
+  const handleSort = (key: keyof Supplier) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const filteredAndSortedSuppliers = useMemo(() => {
+    let result = suppliers.filter(s => 
+      s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      s.category.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    if (sortConfig) {
+      result.sort((a, b) => {
+        const valA = (a[sortConfig.key] || '').toString().toLowerCase();
+        const valB = (b[sortConfig.key] || '').toString().toLowerCase();
+        if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
+        if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
+        return 0;
+      });
+    }
+
+    return result;
+  }, [suppliers, searchTerm, sortConfig]);
+
+  const SortIcon = ({ column }: { column: keyof Supplier }) => {
+    if (sortConfig?.key !== column) return <ArrowUpDown size={12} className="opacity-30 ml-2" />;
+    return sortConfig.direction === 'asc' ? <ChevronUp size={12} className="ml-2 text-blue-600" /> : <ChevronDown size={12} className="ml-2 text-blue-600" />;
+  };
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row gap-6 h-full overflow-hidden">
-      {/* FORMULÁRIO */}
-      <div className="w-full lg:w-[400px] bg-white border border-slate-200 shadow-sm flex flex-col shrink-0 rounded-2xl overflow-hidden">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
-          <UserPlus size={18} className="text-blue-600"/>
-          <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-700">Novo Fornecedor</h3>
+      <ConfirmationModal 
+        isOpen={!!deletingSupplier}
+        onClose={() => setDeletingSupplier(null)}
+        onConfirm={confirmDelete}
+        title="Excluir Fornecedor"
+        message={`Confirma a exclusão de "${deletingSupplier?.name}"? Esta ação removerá os dados de contato permanentemente.`}
+      />
+
+      <ConfirmationModal 
+        isOpen={!!errorModal}
+        onClose={() => setErrorModal(null)}
+        onConfirm={() => setErrorModal(null)}
+        title={errorModal?.title || ""}
+        message={errorModal?.message || ""}
+      />
+
+      {/* FORMULÁRIO COMPACTO LATERAL */}
+      <div className="w-full lg:w-[380px] bg-white border border-slate-200 shadow-sm flex flex-col shrink-0 rounded-2xl overflow-hidden">
+        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <UserPlus size={18} className={editingId ? "text-orange-500" : "text-blue-600"}/>
+            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-700">
+              {editingId ? "Editar Fornecedor" : "Novo Cadastro"}
+            </h3>
+          </div>
+          {editingId && (
+            <button onClick={resetForm} className="text-slate-400 hover:text-slate-600 transition-colors">
+              <X size={16}/>
+            </button>
+          )}
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto custom-scrollbar">
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome da Empresa / Fornecedor</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome / Razão Social</label>
             <input 
               type="text" required
-              className="w-full h-11 px-4 bg-slate-50 border border-slate-200 text-sm font-bold focus:border-blue-500 focus:bg-white outline-none rounded-xl transition-all"
+              className="w-full h-10 px-4 bg-slate-50 border border-slate-200 text-sm font-bold focus:border-blue-500 focus:bg-white outline-none rounded-xl transition-all"
               value={formData.name}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
-              placeholder="Ex: Distribuidora Bem Estar"
+              placeholder="Ex: Fornecedor Ltda"
             />
           </div>
-
           <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoria Principal</label>
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Categoria Vinculada</label>
             <select 
-              className="w-full h-11 px-3 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase outline-none rounded-xl focus:border-blue-500 transition-all"
+              className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase outline-none rounded-xl focus:border-blue-500 transition-all"
               value={formData.category}
-              onChange={e => setFormData({ ...formData, category: e.target.value })}
+              onChange={e => setFormData({ ...formData, category: e.target.value as any })}
             >
               {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
 
-          <button 
-            type="submit"
-            className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] shadow-lg shadow-blue-100 transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95"
-          >
-            <Plus size={16}/> Cadastrar Fornecedor
-          </button>
+          <div className="pt-2 border-t border-slate-100 space-y-4">
+             <div className="space-y-1">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Nome do Contato</label>
+               <div className="relative">
+                 <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
+                 <input 
+                   type="text"
+                   className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 text-sm font-medium rounded-xl outline-none"
+                   value={formData.contactName}
+                   onChange={e => setFormData({ ...formData, contactName: e.target.value })}
+                 />
+               </div>
+             </div>
+             <div className="space-y-1">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Telefone / WhatsApp</label>
+               <div className="relative">
+                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
+                 <input 
+                   type="text"
+                   className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 text-sm font-medium rounded-xl outline-none"
+                   value={formData.contactPhone}
+                   onChange={e => setFormData({ ...formData, contactPhone: e.target.value })}
+                 />
+               </div>
+             </div>
+             <div className="space-y-1">
+               <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">E-mail</label>
+               <div className="relative">
+                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
+                 <input 
+                   type="email"
+                   className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 text-sm font-medium rounded-xl outline-none"
+                   value={formData.contactEmail}
+                   onChange={e => setFormData({ ...formData, contactEmail: e.target.value })}
+                 />
+               </div>
+             </div>
+          </div>
+
+          <div className="flex flex-col gap-2 pt-2">
+            <button 
+              type="submit"
+              className={`w-full h-12 text-white font-black uppercase tracking-widest text-[10px] shadow-lg transition-all flex items-center justify-center gap-2 rounded-xl active:scale-95 ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-slate-900 hover:bg-slate-800'}`}
+            >
+              {editingId ? <Edit2 size={16}/> : <Plus size={16}/>} 
+              {editingId ? 'Salvar Alterações' : 'Salvar Fornecedor'}
+            </button>
+            {editingId && (
+              <button 
+                type="button"
+                onClick={resetForm}
+                className="w-full h-10 bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[9px] rounded-xl hover:bg-slate-200 transition-all"
+              >
+                Cancelar Edição
+              </button>
+            )}
+          </div>
         </form>
       </div>
 
-      {/* LISTAGEM */}
+      {/* LISTAGEM AMPLA */}
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <List size={18} className="text-slate-400"/>
-            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-700">Fornecedores Homologados</h3>
+            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-700">Homologação de Fornecedores</h3>
           </div>
           <div className="relative max-w-xs w-full">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
             <input 
               type="text"
-              placeholder="Pesquisar..."
-              className="w-full h-9 pl-9 pr-4 bg-white border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
+              placeholder="Buscar por nome ou categoria..."
+              className="w-full h-10 pl-10 pr-4 bg-white border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
             />
@@ -93,35 +247,66 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
 
         <div className="flex-1 overflow-auto custom-scrollbar">
           <table className="w-full border-collapse">
-            <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
+            <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 z-10">
               <tr>
-                <th className="px-6 py-3 text-left text-[9px] font-black text-slate-500 uppercase">Nome / Razão Social</th>
-                <th className="px-6 py-3 text-left text-[9px] font-black text-slate-500 uppercase">Categoria</th>
-                <th className="px-6 py-3 text-center text-[9px] font-black text-slate-500 uppercase">Ações</th>
+                <th 
+                  onClick={() => handleSort('name')}
+                  className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase border-r cursor-pointer hover:bg-slate-200 transition-colors"
+                >
+                  <div className="flex items-center">Nome do Fornecedor <SortIcon column="name" /></div>
+                </th>
+                <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase border-r">Contatos</th>
+                <th 
+                  onClick={() => handleSort('category')}
+                  className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase border-r cursor-pointer hover:bg-slate-200 transition-colors"
+                >
+                  <div className="flex items-center">Categoria Padrão <SortIcon column="category" /></div>
+                </th>
+                <th className="px-6 py-4 text-center text-[10px] font-black text-slate-500 uppercase w-32">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredSuppliers.map(s => (
-                <tr key={s.id} className="hover:bg-slate-50 transition-colors">
+              {filteredAndSortedSuppliers.map((s, idx) => (
+                <tr key={s.id} className={`hover:bg-blue-50/50 transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/20'} ${editingId === s.id ? 'bg-orange-50/50' : ''}`}>
                   <td className="px-6 py-4">
                     <div className="text-[11px] font-black text-slate-700 uppercase">{s.name}</div>
                   </td>
-                  <td className="px-6 py-4">
-                    <span className="text-[9px] font-black px-2 py-0.5 bg-slate-100 text-slate-500 rounded uppercase">{s.category}</span>
+                  <td className="px-6 py-4 space-y-1">
+                    {s.contactName && <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5"><User size={10}/> {s.contactName}</div>}
+                    {s.contactPhone && <div className="text-[9px] font-medium text-slate-400 flex items-center gap-1.5"><Phone size={10}/> {s.contactPhone}</div>}
+                    {s.contactEmail && <div className="text-[9px] font-medium text-slate-400 flex items-center gap-1.5"><Mail size={10}/> {s.contactEmail}</div>}
+                    {!s.contactName && !s.contactPhone && !s.contactEmail && <span className="text-[9px] text-slate-300 italic">Sem contatos</span>}
                   </td>
-                  <td className="px-6 py-4 text-center">
-                    <button 
-                      onClick={() => { db.deleteSupplier(s.id); onSuccess(); }}
-                      className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 size={14}/>
-                    </button>
+                  <td className="px-6 py-4">
+                    <span className="text-[9px] font-black px-3 py-1 bg-white border border-slate-100 text-slate-500 rounded-full uppercase shadow-sm">
+                      {s.category}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex justify-center gap-1">
+                      <button 
+                        onClick={() => handleEdit(s)}
+                        className="p-2 text-slate-300 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"
+                        title="Editar Fornecedor"
+                      >
+                        <Edit2 size={16}/>
+                      </button>
+                      <button 
+                        onClick={() => setDeletingSupplier(s)}
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        title="Excluir Fornecedor"
+                      >
+                        <Trash2 size={16}/>
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
-              {filteredSuppliers.length === 0 && (
+              {filteredAndSortedSuppliers.length === 0 && (
                 <tr>
-                  <td colSpan={3} className="px-6 py-12 text-center text-slate-400 text-[10px] font-black uppercase italic">Nenhum fornecedor encontrado</td>
+                  <td colSpan={4} className="px-6 py-20 text-center text-slate-400 text-[10px] font-black uppercase italic tracking-widest">
+                    Nenhum fornecedor cadastrado ou encontrado
+                  </td>
                 </tr>
               )}
             </tbody>
