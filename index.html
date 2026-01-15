@@ -32,54 +32,70 @@
       }
     </script>
     <style>
-      body { background-color: #f8fafc; color: #1e293b; }
+      /* Reset básico para funcionamento do App */
+      html, body { height: 100%; margin: 0; padding: 0; }
+      body { background-color: #f8fafc; color: #1e293b; overflow-x: hidden; }
+      
       .custom-scrollbar::-webkit-scrollbar { width: 6px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-      /* Estilos de Impressão para PDF */
+      /* REGRAS DE IMPRESSÃO - CORREÇÃO DEFINITIVA */
       @media print {
         @page {
           size: A4;
           margin: 10mm;
         }
-        body { background: white !important; }
-        aside, nav, header, button, .no-print, [role="button"] {
+
+        /* Oculta TUDO que tenha a classe no-print */
+        .no-print, aside, header, nav, button, .controls-bar {
           display: none !important;
+          visibility: hidden !important;
         }
-        main {
+
+        /* Quebra as amarras de overflow:hidden do layout principal */
+        html, body, #root, main, .flex-1, .overflow-hidden, .overflow-auto, .h-full {
+          display: block !important;
+          overflow: visible !important;
+          height: auto !important;
+          min-height: auto !important;
+          position: static !important;
+          background: white !important;
+        }
+
+        /* Garante que o container do relatório ocupe a largura total */
+        .max-w-4xl, .max-w-5xl {
+          max-width: 100% !important;
+          width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
-          background: white !important;
-          overflow: visible !important;
         }
-        .flex, .grid {
-          display: block !important;
-        }
-        .overflow-hidden, .overflow-auto {
-          overflow: visible !important;
-        }
-        .max-w-\[1500px\], .max-w-4xl {
-          max-width: 100% !important;
-          width: 100% !important;
-        }
-        .bg-slate-900 {
-          background-color: #f8fafc !important;
-          color: black !important;
-          border: 2px solid #000 !important;
-        }
-        .text-white { color: black !important; }
-        .shadow-subtle, .shadow-subtle-lg, .shadow-lg, .shadow-2xl {
-          box-shadow: none !important;
-          border: 1px solid #e2e8f0 !important;
-        }
+
+        /* Força os gráficos SVG a aparecerem */
         .recharts-responsive-container {
           width: 100% !important;
-          height: 300px !important;
+          height: 350px !important; /* Altura fixa necessária para renderizar SVGs no print */
+          min-height: 350px !important;
+          display: block !important;
+          page-break-inside: avoid;
         }
-        canvas {
-          max-width: 100% !important;
+
+        /* Preservar cores (Tailwind utiliza cores de fundo que o print costuma ignorar) */
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+
+        /* Remove sombras que ficam borradas na impressão */
+        .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
+          box-shadow: none !important;
+          border: 1px solid #eee !important;
+        }
+
+        .bg-slate-900 {
+          background-color: #000 !important;
+          color: #fff !important;
         }
       }
     </style>

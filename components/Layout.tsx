@@ -23,9 +23,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
 
   return (
     <div className="flex h-screen w-full bg-[#F1F5F9] overflow-hidden font-sans text-slate-800">
-      {/* Sidebar Lateral Compacta */}
+      {/* Sidebar - no-print */}
       <aside 
-        className={`fixed lg:static inset-y-0 left-0 w-64 bg-[#1E293B] text-white z-[100] transition-transform duration-300 transform shadow-2xl ${
+        className={`fixed lg:static inset-y-0 left-0 w-64 bg-[#1E293B] text-white z-[100] transition-transform duration-300 transform shadow-2xl no-print ${
           isSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -66,8 +66,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
 
       {/* Área Principal */}
       <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
-        {/* Top Bar Spreadsheet Style */}
-        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-50">
+        {/* Top Bar - no-print */}
+        <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-6 shrink-0 z-50 no-print">
           <div className="flex items-center gap-4">
             <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-600"><Menu size={24}/></button>
             <h2 className="text-xs font-black text-slate-500 uppercase tracking-[0.2em] border-l-4 border-green-500 pl-3">
@@ -84,9 +84,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
           </div>
         </header>
 
-        {/* Content - 100% ocupado e sem rolagem externa */}
-        <main className="flex-1 p-4 lg:p-6 overflow-hidden bg-[#F1F5F9]">
-          <div className="h-full w-full mx-auto flex flex-col">
+        {/* Content */}
+        <main className="flex-1 p-4 lg:p-6 overflow-hidden bg-[#F1F5F9] print:p-0">
+          <div className="h-full w-full mx-auto flex flex-col print:block">
             {children}
           </div>
         </main>
