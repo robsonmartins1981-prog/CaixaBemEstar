@@ -1,11 +1,11 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Expense, ExpenseNature, CostType, Supplier } from '../types';
 import { db } from '../services/db';
 import { NATURES, COST_TYPES } from '../constants';
 import { 
   Plus, Trash2, Receipt, List, CheckCircle, Clock, 
-  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, Phone, Mail, AlertTriangle
+  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, Phone, Mail, AlertTriangle, CalendarDays
 } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -17,11 +17,12 @@ interface AccountsPayableProps {
 const formatMoney = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+type FilterType = 'ALL' | 'PENDING' | 'PAID' | 'NEXT_7_DAYS';
+
 const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [installments, setInstallments] = useState<number>(1);
-  const [installmentDates, setInstallmentDates] = useState<string[]>([]);
+  const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([]);
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -49,7 +50,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Busca Inteligente com Debounce
   useEffect(() => {
     const timer = setTimeout(() => {
       if (formData.supplier.trim().length > 0) {
@@ -63,7 +63,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         setFilteredSuppliers(suppliers.slice(0, 5));
       }
     }, 200);
-
     return () => clearTimeout(timer);
   }, [formData.supplier, suppliers]);
 
@@ -78,8 +77,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       status: 'Pendente',
     });
     setEditingId(null);
-    setInstallments(1);
-    setInstallmentDates([]);
     setShowForm(false);
   };
 
@@ -106,24 +103,43 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     setFormData({ ...formData, value: numericValue });
   };
 
-  const sortedExpenses = [...expenses].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  const pendingTotal = expenses.filter(e => e.status === 'Pendente').reduce((acc, curr) => acc + curr.value, 0);
-  const paidTotal = expenses.filter(e => e.status === 'Pago').reduce((acc, curr) => acc + curr.value, 0);
-
-  // Helper para verificar status de atraso/vencimento
   const getVencimentoStatus = (dueDate: string, status: string) => {
     if (status === 'Pago') return 'none';
     const today = new Date();
     today.setHours(0,0,0,0);
     const due = new Date(dueDate + 'T12:00:00');
     due.setHours(0,0,0,0);
-    
     const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    
     if (diffDays < 0) return 'late';
     if (diffDays <= 7) return 'warning';
     return 'none';
   };
+
+  const filteredExpenses = useMemo(() => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const next7Days = new Date();
+    next7Days.setDate(today.getDate() + 7);
+    next7Days.setHours(23,59,59,999);
+
+    let result = expenses;
+
+    if (activeFilter === 'PENDING') {
+      result = expenses.filter(e => e.status === 'Pendente');
+    } else if (activeFilter === 'PAID') {
+      result = expenses.filter(e => e.status === 'Pago');
+    } else if (activeFilter === 'NEXT_7_DAYS') {
+      result = expenses.filter(e => {
+        const due = new Date(e.dueDate + 'T12:00:00');
+        return e.status === 'Pendente' && due >= today && due <= next7Days;
+      });
+    }
+
+    return [...result].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [expenses, activeFilter]);
+
+  const pendingTotal = expenses.filter(e => e.status === 'Pendente').reduce((acc, curr) => acc + curr.value, 0);
+  const paidTotal = expenses.filter(e => e.status === 'Pago').reduce((acc, curr) => acc + curr.value, 0);
 
   return (
     <div className="flex-1 flex flex-col gap-4 h-full overflow-hidden">
@@ -234,19 +250,43 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         </div>
       )}
 
-      {/* LISTAGEM AMPLA */}
+      {/* LISTAGEM AMPLA COM FILTROS */}
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
-        <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
-           <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700">Contas a Pagar Agendadas</h3>
-           <div className="flex gap-4">
-              <div className="flex items-center gap-1.5 text-[8px] font-black uppercase text-red-600">
-                 <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div> Atrasados
-              </div>
-              <div className="flex items-center gap-1.5 text-[8px] font-black uppercase text-orange-500">
-                 <div className="w-2 h-2 bg-orange-400 rounded-full"></div> Próximos 7 dias
-              </div>
+        <div className="p-4 bg-slate-50 border-b flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0">
+           <div className="flex items-center gap-3">
+              <List size={18} className="text-slate-400"/>
+              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700">Contas a Pagar</h3>
+           </div>
+
+           {/* NOVO SELETOR DE FILTROS */}
+           <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
+             <button 
+                onClick={() => setActiveFilter('ALL')}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${activeFilter === 'ALL' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+             >
+               Todos
+             </button>
+             <button 
+                onClick={() => setActiveFilter('PENDING')}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${activeFilter === 'PENDING' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+             >
+               <Clock size={12}/> Agendados
+             </button>
+             <button 
+                onClick={() => setActiveFilter('PAID')}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${activeFilter === 'PAID' ? 'bg-green-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+             >
+               <CheckCircle size={12}/> Pagos
+             </button>
+             <button 
+                onClick={() => setActiveFilter('NEXT_7_DAYS')}
+                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${activeFilter === 'NEXT_7_DAYS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+             >
+               <CalendarDays size={12}/> Próximos 7 dias
+             </button>
            </div>
         </div>
+
         <div className="flex-1 overflow-auto custom-scrollbar">
           <table className="w-full border-collapse">
             <thead className="sticky top-0 bg-slate-100 z-10 border-b">
@@ -260,7 +300,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {sortedExpenses.map((exp) => {
+              {filteredExpenses.map((exp) => {
                 const alertStatus = getVencimentoStatus(exp.dueDate, exp.status);
                 const bgClass = 
                   alertStatus === 'late' ? 'bg-red-50/70 hover:bg-red-100/80 transition-colors' : 
@@ -302,9 +342,9 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                   </tr>
                 );
               })}
-              {sortedExpenses.length === 0 && (
+              {filteredExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-[10px] font-black uppercase text-slate-300">Nenhum título cadastrado</td>
+                  <td colSpan={6} className="px-6 py-12 text-center text-[10px] font-black uppercase text-slate-300 italic tracking-widest">Nenhum título encontrado para este filtro</td>
                 </tr>
               )}
             </tbody>

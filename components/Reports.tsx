@@ -3,7 +3,8 @@ import React, { useMemo, useState } from 'react';
 import { CashEntry, Expense, CardRates } from '../types';
 import { db } from '../services/db';
 import { 
-  ChevronLeft, ChevronRight, PieChart, ClipboardList, TrendingUp, Calendar, Filter, FileDown
+  ChevronLeft, ChevronRight, PieChart, ClipboardList, TrendingUp, Calendar, FileDown,
+  ArrowUpRight, BarChart3, Target, Wallet, Percent
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
@@ -123,7 +124,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
   const handlePrintPDF = () => {
     setReportView('dre');
-    // Aumentado o timeout para garantir que os SVGs do Recharts recalculem o layout
     setTimeout(() => {
       window.print();
     }, 800);
@@ -133,7 +133,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden h-full print:block print:h-auto">
-      {/* Barra de Controles - Escondida na Impressão */}
+      {/* Barra de Controles */}
       <div className="bg-white border border-slate-200 p-3 flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0 shadow-sm rounded-2xl z-10 no-print">
         <div className="flex flex-wrap items-center gap-4">
           <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -150,25 +150,19 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
           
           {periodType === 'Custom' ? (
             <div className="flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
-              <div className="flex flex-col">
-                <span className="text-[7px] font-black text-slate-400 uppercase ml-1">Início</span>
-                <input 
-                  type="date" 
-                  value={startDate} 
-                  onChange={(e) => setStartDate(e.target.value)}
-                  className="h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                />
-              </div>
-              <ChevronRight size={14} className="text-slate-300 mt-3"/>
-              <div className="flex flex-col">
-                <span className="text-[7px] font-black text-slate-400 uppercase ml-1">Fim</span>
-                <input 
-                  type="date" 
-                  value={endDate} 
-                  onChange={(e) => setEndDate(e.target.value)}
-                  className="h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-                />
-              </div>
+              <input 
+                type="date" 
+                value={startDate} 
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
+              />
+              <ChevronRight size={14} className="text-slate-300"/>
+              <input 
+                type="date" 
+                value={endDate} 
+                onChange={(e) => setEndDate(e.target.value)}
+                className="h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
+              />
             </div>
           ) : (
             <div className="flex items-center gap-2">
@@ -188,9 +182,9 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
         <button 
           onClick={handlePrintPDF}
-          className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 active:scale-95 transition-all shadow-lg"
+          className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg no-print"
         >
-          <FileDown size={14}/> Exportar DRE (PDF)
+          <FileDown size={14}/> Exportar PDF
         </button>
       </div>
 
@@ -198,75 +192,113 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
         <div className="flex-1 overflow-auto custom-scrollbar p-6 print:p-0 print:overflow-visible">
           
           {reportView === 'dre' && (
-            <div id="dre-report-content" className="max-w-4xl mx-auto space-y-8 animate-in fade-in print:max-w-none">
+            <div id="dre-report-content" className="max-w-5xl mx-auto space-y-8 animate-in fade-in print:max-w-none">
+              {/* Header DRE */}
               <div className="flex flex-col gap-1 border-b-4 border-slate-900 pb-4">
                 <div className="flex justify-between items-end">
                   <h3 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">Demonstrativo de Resultado (DRE)</h3>
                   <div className="text-right">
-                    <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Relatório Analítico</p>
+                    <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Relatório Consolidado</p>
                     <p className="text-[8px] font-bold text-slate-400 uppercase">{formattedLabel()}</p>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
-                <DREHeader label="1. RECEITA BRUTA" value={analytics.dre.receitaBruta} />
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center bg-slate-50 border border-slate-100 rounded-2xl p-6 print:bg-white print:border-slate-200">
-                  <div className="h-48 w-full">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-4">Mix de Pagamentos</p>
-                    <ResponsiveContainer width="100%" height="90%">
-                      <BarChart layout="vertical" data={analytics.dre.revenueChartData} margin={{ left: -20 }}>
-                        <XAxis type="number" hide />
-                        <YAxis type="category" dataKey="name" fontSize={10} fontWeight="900" width={80} axisLine={false} tickLine={false} />
-                        <Tooltip formatter={(val: number) => formatMoney(val)} />
-                        <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                          {analytics.dre.revenueChartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
+              {/* Top Summary Cards - VISIBILIDADE MELHORADA */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <IndicatorCard 
+                  label="1. Receita Bruta" 
+                  value={analytics.dre.receitaBruta} 
+                  icon={<BarChart3 size={18}/>}
+                  color="blue"
+                />
+                <IndicatorCard 
+                  label="2. Receita Líquida" 
+                  value={analytics.dre.receitaLiquida} 
+                  icon={<Target size={18}/>}
+                  color="blue"
+                  sub="(Pós Taxas e Impostos)"
+                />
+                <IndicatorCard 
+                  label="3. Lucro Bruto" 
+                  value={analytics.dre.lucroBruto} 
+                  icon={<Wallet size={18}/>}
+                  color="green"
+                  sub="(Pós CMV)"
+                />
+              </div>
+
+              <div className="space-y-6">
+                {/* Seção Analítica de Receita */}
+                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 print:bg-white">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Detalhamento de Receita</h4>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
+                    <div className="h-48 w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart layout="vertical" data={analytics.dre.revenueChartData} margin={{ left: -20 }}>
+                          <XAxis type="number" hide />
+                          <YAxis type="category" dataKey="name" fontSize={10} fontWeight="900" width={80} axisLine={false} tickLine={false} />
+                          <Tooltip formatter={(val: number) => formatMoney(val)} />
+                          <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
+                            {analytics.dre.revenueChartData.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.color} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-2">
+                      <DRERow label="(+) Dinheiro" value={analytics.dre.faturamento.dinheiro} />
+                      <DRERow label="(+) Pix" value={analytics.dre.faturamento.pix} />
+                      <DRERow label="(+) Cartões" value={analytics.dre.faturamento.debito + analytics.dre.faturamento.credito} />
+                      <DRERow label="(-) Taxas de Cartão" value={analytics.dre.taxasMaquininha} negative />
+                      <DRERow label="(-) Impostos" value={analytics.dre.impostos} negative />
+                      <div className="pt-2 border-t border-slate-200">
+                        <DRESubtotal label="Receita Líquida" value={analytics.dre.receitaLiquida} />
+                      </div>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <DRERow label="(+) Dinheiro" value={analytics.dre.faturamento.dinheiro} indent />
-                    <DRERow label="(+) Pix" value={analytics.dre.faturamento.pix} indent />
-                    <DRERow label="(+) Cartões" value={analytics.dre.faturamento.debito + analytics.dre.faturamento.credito} indent />
-                    <DRERow label="(-) Taxas de Cartão" value={analytics.dre.taxasMaquininha} indent negative />
-                    <DRERow label="(-) Impostos" value={analytics.dre.impostos} indent negative />
-                  </div>
-                </div>
-                
-                <DRESubtotal label="(=) RECEITA LÍQUIDA" value={analytics.dre.receitaLiquida} />
-                
-                <div className="space-y-1">
-                  <DRERow label="(-) Custo de Mercadoria (CMV)" value={analytics.dre.cmv} negative />
-                  <DRESubtotal label="(=) LUCRO BRUTO" value={analytics.dre.lucroBruto} highlight />
                 </div>
 
-                <div className="space-y-1">
-                  <DRERow label="(-) Despesas Fixas" value={analytics.dre.despesasFixas} negative />
-                  <DRERow label="(-) Outras Variáveis" value={analytics.dre.despesasVariaveisOutras} negative />
+                {/* Seção Operacional e Custos */}
+                <div className="space-y-2">
+                  <DRERow label="(-) Custo de Mercadoria (CMV)" value={analytics.dre.cmv} negative large />
+                  <DRESubtotal label="Lucro Bruto Operacional" value={analytics.dre.lucroBruto} highlighted />
                 </div>
 
-                <div className="mt-8 p-10 bg-slate-900 rounded-[32px] text-white flex flex-col md:flex-row justify-between items-center shadow-xl print:bg-black print:text-white">
-                   <div className="flex flex-col text-center md:text-left">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Resultado Final</span>
+                <div className="space-y-2 bg-slate-50/50 p-6 rounded-3xl border border-dashed border-slate-200">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Despesas Administrativas</h4>
+                  <DRERow label="(-) Despesas Fixas (Aluguel, Salários, etc)" value={analytics.dre.despesasFixas} negative />
+                  <DRERow label="(-) Outras Despesas Variáveis" value={analytics.dre.despesasVariaveisOutras} negative />
+                </div>
+
+                {/* Resultado Final - DESTAQUE MÁXIMO */}
+                <div className="mt-8 p-10 bg-slate-900 rounded-[40px] text-white flex flex-col md:flex-row justify-between items-center shadow-2xl print:bg-black print:text-white transition-all hover:scale-[1.01]">
+                   <div className="flex flex-col text-center md:text-left gap-1">
+                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/20 text-green-400 rounded-full w-fit mx-auto md:mx-0">
+                        <TrendingUp size={12}/>
+                        <span className="text-[9px] font-black uppercase tracking-widest">Resultado Final</span>
+                      </div>
                       <h4 className="text-4xl font-black uppercase tracking-tighter">LUCRO LÍQUIDO</h4>
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest opacity-60">Competência: {formattedLabel()}</p>
                    </div>
-                   <div className="text-center md:text-right mt-4 md:mt-0">
-                      <p className={`text-5xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                   <div className="text-center md:text-right mt-6 md:mt-0">
+                      <p className={`text-6xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                         {formatMoney(analytics.dre.lucroLiquido)}
                       </p>
+                      <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
+                        Margem Líquida: {analytics.dre.receitaBruta > 0 ? ((analytics.dre.lucroLiquido / analytics.dre.receitaBruta) * 100).toFixed(1) : 0}%
+                      </div>
                    </div>
                 </div>
 
+                {/* Gráfico de Tendência */}
                 <div className="mt-12 space-y-4 page-break-before">
                   <div className="flex items-center gap-2">
                     <TrendingUp size={16} className="text-blue-600"/>
-                    <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Tendência do Lucro Líquido (Últimos 12 Meses)</h5>
+                    <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Evolução do Resultado (12 Meses)</h5>
                   </div>
-                  <div className="h-64 w-full bg-white border border-slate-100 rounded-2xl p-4 shadow-sm print:border-slate-200">
+                  <div className="h-64 w-full bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={analytics.dre.historyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                         <defs>
@@ -319,26 +351,40 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   );
 };
 
-const DREHeader = ({ label, value, negative }: any) => (
-  <div className="flex justify-between items-center py-2.5 border-b-2 border-slate-900">
-    <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">{label}</span>
-    <span className={`text-[11px] font-mono font-black ${negative ? 'text-red-600' : 'text-slate-900'}`}>{formatMoney(value)}</span>
-  </div>
-);
+// Componente de Card de Indicador para o Topo
+const IndicatorCard = ({ label, value, icon, color, sub }: any) => {
+  const colorStyles: any = {
+    blue: "border-blue-100 bg-blue-50/30 text-blue-600",
+    green: "border-green-100 bg-green-50/30 text-green-600"
+  };
+  
+  return (
+    <div className={`p-6 border rounded-[32px] flex flex-col gap-3 shadow-sm transition-all hover:shadow-md ${colorStyles[color]}`}>
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-black uppercase tracking-widest opacity-70">{label}</span>
+        <div className="p-2 bg-white rounded-xl shadow-sm">{icon}</div>
+      </div>
+      <div>
+        <div className="text-2xl font-mono font-black tracking-tighter">{formatMoney(value)}</div>
+        {sub && <div className="text-[8px] font-bold uppercase tracking-widest mt-1 opacity-60">{sub}</div>}
+      </div>
+    </div>
+  );
+};
 
-const DRERow = ({ label, value, indent, negative }: any) => (
-  <div className={`flex justify-between items-center py-1.5 ${indent ? 'pl-6' : ''}`}>
-    <span className="text-[10px] font-bold text-slate-500 uppercase">{label}</span>
-    <span className={`text-[10px] font-mono font-bold ${negative ? 'text-red-500' : 'text-slate-600'}`}>
+const DRERow = ({ label, value, indent, negative, large }: any) => (
+  <div className={`flex justify-between items-center py-2 ${indent ? 'pl-6' : ''} ${large ? 'py-4' : ''}`}>
+    <span className={`${large ? 'text-[11px] font-black' : 'text-[10px] font-bold'} text-slate-600 uppercase tracking-wide`}>{label}</span>
+    <span className={`${large ? 'text-sm font-black' : 'text-[10px] font-bold'} font-mono ${negative && value > 0 ? 'text-red-500' : 'text-slate-800'}`}>
       {negative && value > 0 ? '-' : ''} {formatMoney(value)}
     </span>
   </div>
 );
 
-const DRESubtotal = ({ label, value, highlight }: any) => (
-  <div className={`flex justify-between items-center py-4 px-6 rounded-2xl mt-2 ${highlight ? 'bg-blue-600 text-white shadow-lg' : 'bg-slate-100'}`}>
-    <span className={`text-[11px] font-black uppercase ${highlight ? 'text-white' : 'text-slate-700'}`}>{label}</span>
-    <span className={`text-base font-mono font-black ${highlight ? 'text-white' : (value >= 0 ? 'text-slate-900' : 'text-red-700')}`}>{formatMoney(value)}</span>
+const DRESubtotal = ({ label, value, highlighted }: any) => (
+  <div className={`flex justify-between items-center py-4 px-6 rounded-2xl ${highlighted ? 'bg-blue-600 text-white shadow-xl' : 'bg-slate-200/50 text-slate-900 border border-slate-200'}`}>
+    <span className="text-[11px] font-black uppercase tracking-widest">{label}</span>
+    <span className="text-lg font-mono font-black">{formatMoney(value)}</span>
   </div>
 );
 
