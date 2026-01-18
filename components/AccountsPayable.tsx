@@ -5,7 +5,7 @@ import { db } from '../services/db';
 import { NATURES, COST_TYPES } from '../constants';
 import { 
   Plus, Trash2, Receipt, List, CheckCircle, Clock, 
-  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, Phone, Mail, AlertTriangle, CalendarDays
+  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, Phone, Mail, AlertTriangle, ArrowUpDown, ChevronUp
 } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -17,16 +17,20 @@ interface AccountsPayableProps {
 const formatMoney = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type FilterType = 'ALL' | 'PENDING' | 'PAID' | 'NEXT_7_DAYS';
+type FilterStatus = 'Todos' | 'Pendentes' | 'Pagos' | 'Vencidos' | 'A Vencer';
+type SortConfig = { key: keyof Expense; direction: 'asc' | 'desc' } | null;
 
 const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [activeFilter, setActiveFilter] = useState<FilterType>('ALL');
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([]);
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>('Todos');
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dueDate', direction: 'asc' });
+  const [searchTerm, setSearchTerm] = useState('');
+  
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   const [formData, setFormData] = useState<Omit<Expense, 'id'>>({
@@ -115,31 +119,62 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     return 'none';
   };
 
-  const filteredExpenses = useMemo(() => {
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const next7Days = new Date();
-    next7Days.setDate(today.getDate() + 7);
-    next7Days.setHours(23,59,59,999);
+  const handleSort = (key: keyof Expense) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
 
-    let result = expenses;
+  const processedExpenses = useMemo(() => {
+    let filtered = expenses.filter(exp => {
+      const vStatus = getVencimentoStatus(exp.dueDate, exp.status);
+      const searchMatch = 
+        exp.supplier.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        exp.nature.toLowerCase().includes(searchTerm.toLowerCase());
 
-    if (activeFilter === 'PENDING') {
-      result = expenses.filter(e => e.status === 'Pendente');
-    } else if (activeFilter === 'PAID') {
-      result = expenses.filter(e => e.status === 'Pago');
-    } else if (activeFilter === 'NEXT_7_DAYS') {
-      result = expenses.filter(e => {
-        const due = new Date(e.dueDate + 'T12:00:00');
-        return e.status === 'Pendente' && due >= today && due <= next7Days;
+      if (!searchMatch) return false;
+
+      if (filterStatus === 'Pendentes') return exp.status === 'Pendente';
+      if (filterStatus === 'Pagos') return exp.status === 'Pago';
+      if (filterStatus === 'Vencidos') return exp.status === 'Pendente' && vStatus === 'late';
+      if (filterStatus === 'A Vencer') return exp.status === 'Pendente' && vStatus !== 'late';
+      return true;
+    });
+
+    if (sortConfig) {
+      filtered.sort((a, b) => {
+        const valA = a[sortConfig.key];
+        const valB = b[sortConfig.key];
+        
+        if (typeof valA === 'string' && typeof valB === 'string') {
+          return sortConfig.direction === 'asc' 
+            ? valA.localeCompare(valB) 
+            : valB.localeCompare(valA);
+        }
+        
+        if (typeof valA === 'number' && typeof valB === 'number') {
+          return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
+        }
+        
+        return 0;
       });
     }
 
-    return [...result].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
-  }, [expenses, activeFilter]);
+    return filtered;
+  }, [expenses, filterStatus, sortConfig, searchTerm]);
 
   const pendingTotal = expenses.filter(e => e.status === 'Pendente').reduce((acc, curr) => acc + curr.value, 0);
   const paidTotal = expenses.filter(e => e.status === 'Pago').reduce((acc, curr) => acc + curr.value, 0);
+
+  const SortIndicator = ({ column }: { column: keyof Expense }) => {
+    if (sortConfig?.key !== column) return <ArrowUpDown size={12} className="ml-1 opacity-20" />;
+    return sortConfig.direction === 'asc' 
+      ? <ChevronUp size={12} className="ml-1 text-blue-600" /> 
+      : <ChevronDown size={12} className="ml-1 text-blue-600" />;
+  };
 
   return (
     <div className="flex-1 flex flex-col gap-4 h-full overflow-hidden">
@@ -151,29 +186,29 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         message="Deseja remover este compromisso financeiro permanentemente?"
       />
 
-      {/* HEADER RESUMO E CONTROLE */}
+      {/* HEADER RESUMO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
-        <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+        <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
              <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Clock size={18}/></div>
              <div>
-               <p className="text-[9px] font-black text-slate-400 uppercase">Previsão Pendente</p>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Previsão Pendente</p>
                <p className="text-lg font-mono font-black text-slate-800 tracking-tighter">{formatMoney(pendingTotal)}</p>
              </div>
           </div>
         </div>
-        <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between">
+        <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
              <div className="p-2 bg-green-100 text-green-600 rounded-lg"><CheckCircle size={18}/></div>
              <div>
-               <p className="text-[9px] font-black text-slate-400 uppercase">Total Liquidado</p>
+               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Liquidado</p>
                <p className="text-lg font-mono font-black text-slate-800 tracking-tighter">{formatMoney(paidTotal)}</p>
              </div>
           </div>
         </div>
         <button 
           onClick={() => setShowForm(!showForm)}
-          className={`flex items-center justify-center gap-2 px-6 py-4 rounded-xl font-black uppercase text-[11px] transition-all shadow-sm ${showForm ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+          className={`flex items-center justify-center gap-2 px-6 py-4 rounded-xl font-black uppercase text-[11px] transition-all shadow-md ${showForm ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
         >
           {showForm ? <X size={20}/> : <Plus size={20}/>}
           {showForm ? 'Fechar Formulário' : 'Novo Lançamento'}
@@ -182,13 +217,13 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
 
       {/* FORMULÁRIO */}
       {showForm && (
-        <div className="bg-white border border-slate-200 shadow-lg rounded-2xl overflow-visible animate-in slide-in-from-top-4 duration-300 shrink-0">
+        <div className="bg-white border border-slate-200 shadow-xl rounded-2xl overflow-visible animate-in slide-in-from-top-4 duration-300 shrink-0">
           <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-800">Dados do Título</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-800">Cadastro de Título</h3>
           </div>
           <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4 overflow-visible">
             <div className="md:col-span-2 space-y-1 relative" ref={dropdownRef}>
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fornecedor / Beneficiário</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fornecedor</label>
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
                 <input 
@@ -198,41 +233,34 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                   value={formData.supplier} 
                   onChange={e => { setFormData({ ...formData, supplier: e.target.value }); setShowSupplierDropdown(true); }}
                   onFocus={() => setShowSupplierDropdown(true)}
-                  placeholder="Pesquisar fornecedor..."
+                  placeholder="Nome do fornecedor..."
                 />
               </div>
-              
               {showSupplierDropdown && filteredSuppliers.length > 0 && (
                 <div className="absolute z-[110] left-0 right-0 top-full mt-1 bg-white border border-slate-200 shadow-2xl rounded-xl overflow-hidden max-h-60 overflow-y-auto custom-scrollbar">
                   {filteredSuppliers.map(s => (
                     <button 
-                      key={s.id} 
-                      type="button" 
-                      onClick={() => { 
-                        setFormData({ ...formData, supplier: s.name, nature: s.category as any }); 
-                        setShowSupplierDropdown(false); 
-                      }} 
-                      className="w-full p-4 text-left hover:bg-blue-50 border-b border-slate-50 last:border-0 transition-colors flex items-center justify-between"
+                      key={s.id} type="button" 
+                      onClick={() => { setFormData({ ...formData, supplier: s.name, nature: s.category as any }); setShowSupplierDropdown(false); }} 
+                      className="w-full p-3 text-left hover:bg-blue-50 border-b border-slate-50 last:border-0 transition-colors"
                     >
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-black uppercase text-slate-800 truncate">{s.name}</p>
-                        <p className="text-[8px] font-bold text-slate-400 uppercase tracking-wider">{s.category}</p>
-                      </div>
+                      <p className="text-[10px] font-black uppercase text-slate-800">{s.name}</p>
+                      <p className="text-[8px] font-bold text-slate-400 uppercase">{s.category}</p>
                     </button>
                   ))}
                 </div>
               )}
             </div>
             <div className="md:col-span-2 space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descrição</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descrição / Observação</label>
               <input type="text" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Vencimento</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Vencimento</label>
               <input type="date" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" value={formData.dueDate} onChange={e => setFormData({ ...formData, dueDate: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor R$</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor do Título</label>
               <input type="text" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none font-mono" value={formData.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} onChange={handleValueChange} />
             </div>
             <div className="space-y-1">
@@ -243,64 +271,76 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
             </div>
             <div className="flex items-end">
               <button type="submit" className="w-full h-10 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
-                {editingId ? 'Atualizar Título' : 'Gravar Título'}
+                {editingId ? 'Salvar Alterações' : 'Confirmar Título'}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* LISTAGEM AMPLA COM FILTROS */}
-      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
-        <div className="p-4 bg-slate-50 border-b flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0">
-           <div className="flex items-center gap-3">
-              <List size={18} className="text-slate-400"/>
-              <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-700">Contas a Pagar</h3>
-           </div>
-
-           {/* NOVO SELETOR DE FILTROS */}
-           <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
-             <button 
-                onClick={() => setActiveFilter('ALL')}
-                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${activeFilter === 'ALL' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >
-               Todos
-             </button>
-             <button 
-                onClick={() => setActiveFilter('PENDING')}
-                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${activeFilter === 'PENDING' ? 'bg-blue-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >
-               <Clock size={12}/> Agendados
-             </button>
-             <button 
-                onClick={() => setActiveFilter('PAID')}
-                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${activeFilter === 'PAID' ? 'bg-green-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >
-               <CheckCircle size={12}/> Pagos
-             </button>
-             <button 
-                onClick={() => setActiveFilter('NEXT_7_DAYS')}
-                className={`px-4 py-2 rounded-lg text-[9px] font-black uppercase transition-all flex items-center gap-2 ${activeFilter === 'NEXT_7_DAYS' ? 'bg-orange-500 text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
-             >
-               <CalendarDays size={12}/> Próximos 7 dias
-             </button>
-           </div>
+      {/* FILTROS E PESQUISA */}
+      <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col xl:flex-row items-center justify-between gap-4 shadow-sm shrink-0">
+        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto overflow-x-auto no-scrollbar">
+          {(['Todos', 'Pendentes', 'Pagos', 'Vencidos', 'A Vencer'] as FilterStatus[]).map(s => (
+            <button
+              key={s}
+              onClick={() => setFilterStatus(s)}
+              className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap ${
+                filterStatus === s ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
         </div>
+        <div className="relative w-full xl:w-80">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
+          <input 
+            type="text"
+            placeholder="Buscar fornecedor, natureza ou descrição..."
+            className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+          />
+        </div>
+      </div>
 
+      {/* LISTAGEM */}
+      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
         <div className="flex-1 overflow-auto custom-scrollbar">
-          <table className="w-full border-collapse">
+          <table className="w-full border-collapse min-w-[800px]">
             <thead className="sticky top-0 bg-slate-100 z-10 border-b">
               <tr>
-                <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase">Vencimento</th>
-                <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase">Fornecedor / Descrição</th>
-                <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase">Natureza</th>
-                <th className="px-6 py-4 text-right text-[9px] font-black text-slate-500 uppercase">Valor</th>
+                <th 
+                  onClick={() => handleSort('dueDate')}
+                  className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
+                >
+                  <div className="flex items-center">Vencimento <SortIndicator column="dueDate"/></div>
+                </th>
+                <th 
+                  onClick={() => handleSort('supplier')}
+                  className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
+                >
+                  <div className="flex items-center">Fornecedor / Descrição <SortIndicator column="supplier"/></div>
+                </th>
+                <th 
+                  onClick={() => handleSort('nature')}
+                  className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
+                >
+                  <div className="flex items-center">Natureza <SortIndicator column="nature"/></div>
+                </th>
+                <th 
+                  onClick={() => handleSort('value')}
+                  className="px-6 py-4 text-right text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
+                >
+                  <div className="flex items-center justify-end">Valor <SortIndicator column="value"/></div>
+                </th>
                 <th className="px-6 py-4 text-center text-[9px] font-black text-slate-500 uppercase">Status</th>
                 <th className="px-6 py-4 text-center text-[9px] font-black text-slate-500 uppercase">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredExpenses.map((exp) => {
+              {processedExpenses.map((exp) => {
                 const alertStatus = getVencimentoStatus(exp.dueDate, exp.status);
                 const bgClass = 
                   alertStatus === 'late' ? 'bg-red-50/70 hover:bg-red-100/80 transition-colors' : 
@@ -318,8 +358,8 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                        </div>
                     </td>
                     <td className="px-6 py-4">
-                       <div className="text-[10px] font-black text-slate-800 uppercase truncate">{exp.supplier}</div>
-                       <div className="text-[8px] font-bold text-slate-400 uppercase truncate">{exp.description}</div>
+                       <div className="text-[10px] font-black text-slate-800 uppercase truncate max-w-[200px]">{exp.supplier}</div>
+                       <div className="text-[8px] font-bold text-slate-400 uppercase truncate max-w-[200px]">{exp.description}</div>
                     </td>
                     <td className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase">{exp.nature}</td>
                     <td className={`px-6 py-4 text-right font-mono font-black text-[11px] ${alertStatus === 'late' ? 'text-red-600' : 'text-slate-900'}`}>
@@ -328,7 +368,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                     <td className="px-6 py-4 text-center">
                        <button 
                         onClick={() => { db.updateExpenseStatus(exp.id, exp.status === 'Pendente' ? 'Pago' : 'Pendente'); onSuccess(); }}
-                        className={`px-3 py-1 rounded-full text-[8px] font-black uppercase transition-all ${exp.status === 'Pago' ? 'bg-green-500 text-white shadow-sm' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'}`}
+                        className={`px-3 py-1 rounded-full text-[8px] font-black uppercase transition-all shadow-sm ${exp.status === 'Pago' ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'}`}
                        >
                          {exp.status}
                        </button>
@@ -342,9 +382,11 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                   </tr>
                 );
               })}
-              {filteredExpenses.length === 0 && (
+              {processedExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-[10px] font-black uppercase text-slate-300 italic tracking-widest">Nenhum título encontrado para este filtro</td>
+                  <td colSpan={6} className="px-6 py-12 text-center text-[10px] font-black uppercase text-slate-300 tracking-widest italic">
+                    Nenhum título encontrado com os filtros atuais
+                  </td>
                 </tr>
               )}
             </tbody>

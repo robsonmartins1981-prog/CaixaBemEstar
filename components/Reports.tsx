@@ -3,12 +3,12 @@ import React, { useMemo, useState } from 'react';
 import { CashEntry, Expense, CardRates } from '../types';
 import { db } from '../services/db';
 import { 
-  ChevronLeft, ChevronRight, PieChart, ClipboardList, TrendingUp, Calendar, FileDown,
-  ArrowUpRight, BarChart3, Target, Wallet, Percent
+  ChevronLeft, ChevronRight, PieChart, ClipboardList, TrendingUp, FileDown, 
+  ArrowUpRight, Info
 } from 'lucide-react';
 import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  Cell, AreaChart, Area
+  CartesianGrid, Tooltip, ResponsiveContainer, 
+  AreaChart, Area, XAxis, YAxis
 } from 'recharts';
 
 interface ReportsProps {
@@ -18,6 +18,9 @@ interface ReportsProps {
 
 const formatMoney = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const formatPercent = (val: number) => 
+  val.toLocaleString('pt-BR', { style: 'percent', minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 type PeriodType = 'Diário' | 'Mensal' | 'Anual' | 'Custom';
 type ReportView = 'audit' | 'dre';
@@ -44,7 +47,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       if (periodType === 'Custom') {
         return itemDate >= startDate && itemDate <= endDate;
       }
-      
       const d = new Date(itemDate + 'T12:00:00');
       if (periodType === 'Diário') return d.toDateString() === selectedDate.toDateString();
       if (periodType === 'Mensal') return d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
@@ -62,13 +64,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       credito: periodEntries.reduce((acc, e) => acc + e.credit, 0),
     };
 
-    const revenueChartData = [
-      { name: 'Dinheiro', value: faturamento.dinheiro, color: '#10b981' },
-      { name: 'Pix', value: faturamento.pix, color: '#06b6d4' },
-      { name: 'Débito', value: faturamento.debito, color: '#64748b' },
-      { name: 'Crédito', value: faturamento.credito, color: '#3b82f6' },
-    ].filter(item => item.value > 0);
-
     const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito;
     const taxasMaquininha = (faturamento.debito * (rates.debit / 100)) + (faturamento.credito * (rates.credit / 100));
     const impostos = periodExpenses.filter(e => e.nature === 'Impostos').reduce((acc, e) => acc + e.value, 0);
@@ -81,7 +76,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
     const historyTrend = [];
     const trendEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-    for (let i = 11; i >= 0; i--) {
+    for (let i = 5; i >= 0; i--) {
       const d = new Date(trendEnd.getFullYear(), trendEnd.getMonth() - i, 1);
       const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const mEntries = entries.filter(e => e.date.startsWith(mKey));
@@ -96,7 +91,11 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     }
 
     return {
-      dre: { receitaBruta, faturamento, taxasMaquininha, impostos, receitaLiquida, cmv, lucroBruto, despesasFixas, despesasVariaveisOutras, lucroLiquido, revenueChartData, historyTrend },
+      dre: { 
+        receitaBruta, faturamento, taxasMaquininha, impostos, receitaLiquida, 
+        cmv, lucroBruto, despesasFixas, despesasVariaveisOutras, lucroLiquido, 
+        historyTrend 
+      },
       audit: { items: periodExpenses.sort((a, b) => a.dueDate.localeCompare(b.dueDate)) }
     };
   }, [entries, expenses, periodType, baseDate, rates, startDate, endDate]);
@@ -124,268 +123,242 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
   const handlePrintPDF = () => {
     setReportView('dre');
-    setTimeout(() => {
-      window.print();
-    }, 800);
+    setTimeout(() => { window.print(); }, 500);
   };
 
   if (!analytics) return null;
 
+  const rb = analytics.dre.receitaBruta || 1;
+
   return (
-    <div className="flex-1 flex flex-col gap-4 overflow-hidden h-full print:block print:h-auto">
-      {/* Barra de Controles */}
-      <div className="bg-white border border-slate-200 p-3 flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0 shadow-sm rounded-2xl z-10 no-print">
-        <div className="flex flex-wrap items-center gap-4">
-          <div className="flex bg-slate-100 p-1 rounded-xl">
+    <div className="flex-1 flex flex-col gap-4 overflow-hidden h-full print:block print:bg-white bg-[#F8FAFC]">
+      {/* Barra de Filtros (Escondida no Print) */}
+      <div className="bg-white border-b border-slate-200 p-3 flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0 no-print z-20 shadow-sm">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
             {(['Diário', 'Mensal', 'Anual', 'Custom'] as PeriodType[]).map(p => (
               <button 
                 key={p} 
                 onClick={() => setPeriodType(p)} 
-                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${periodType === p ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${periodType === p ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
               >
-                {p === 'Custom' ? 'Período' : p}
+                {p}
               </button>
             ))}
           </div>
           
-          {periodType === 'Custom' ? (
-            <div className="flex items-center gap-2 animate-in slide-in-from-left-2 duration-300">
-              <input 
-                type="date" 
-                value={startDate} 
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-              />
-              <ChevronRight size={14} className="text-slate-300"/>
-              <input 
-                type="date" 
-                value={endDate} 
-                onChange={(e) => setEndDate(e.target.value)}
-                className="h-8 px-2 bg-slate-50 border border-slate-200 rounded-lg text-[10px] font-bold outline-none focus:border-blue-500"
-              />
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-               <button onClick={() => handleAdjustDate(-1)} className="p-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"><ChevronLeft size={14}/></button>
-               <div className="px-4 py-1.5 bg-slate-900 text-white rounded-lg font-mono font-bold text-[10px] min-w-[140px] text-center uppercase tracking-widest">
-                  {formattedLabel()}
-               </div>
-               <button onClick={() => handleAdjustDate(1)} className="p-2 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"><ChevronRight size={14}/></button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+             <button onClick={() => handleAdjustDate(-1)} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"><ChevronLeft size={14}/></button>
+             <div className="px-4 py-2 bg-slate-900 text-white rounded-lg font-mono font-bold text-[10px] min-w-[140px] text-center uppercase tracking-widest shadow-md">
+                {formattedLabel()}
+             </div>
+             <button onClick={() => handleAdjustDate(1)} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"><ChevronRight size={14}/></button>
+          </div>
 
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-            <button onClick={() => setReportView('dre')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'dre' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}><PieChart size={14}/> DRE</button>
-            <button onClick={() => setReportView('audit')} className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'audit' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-400'}`}><ClipboardList size={14}/> Auditoria</button>
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button onClick={() => setReportView('dre')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'dre' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}><PieChart size={14}/> DRE</button>
+            <button onClick={() => setReportView('audit')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'audit' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}><ClipboardList size={14}/> Auditoria</button>
           </div>
         </div>
 
         <button 
           onClick={handlePrintPDF}
-          className="flex items-center gap-2 px-6 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all shadow-lg no-print"
+          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 active:scale-95 transition-all shadow-lg"
         >
-          <FileDown size={14}/> Exportar PDF
+          <FileDown size={14}/> Imprimir DRE
         </button>
       </div>
 
-      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-3xl print:border-0 print:shadow-none print:overflow-visible print:block">
-        <div className="flex-1 overflow-auto custom-scrollbar p-6 print:p-0 print:overflow-visible">
-          
-          {reportView === 'dre' && (
-            <div id="dre-report-content" className="max-w-5xl mx-auto space-y-8 animate-in fade-in print:max-w-none">
-              {/* Header DRE */}
-              <div className="flex flex-col gap-1 border-b-4 border-slate-900 pb-4">
-                <div className="flex justify-between items-end">
-                  <h3 className="text-3xl font-black text-slate-800 uppercase tracking-tighter">Demonstrativo de Resultado (DRE)</h3>
+      <div className="flex-1 overflow-auto custom-scrollbar p-2 lg:p-4 print:p-0 print:overflow-visible bg-[#F8FAFC] print:bg-white">
+        {reportView === 'dre' ? (
+          <div className="max-w-4xl mx-auto bg-white border border-slate-200 shadow-xl rounded-[2.5rem] overflow-hidden print:border-0 print:shadow-none print:max-w-none print:rounded-none">
+            {/* Header do Relatório Otimizado */}
+            <div className="p-6 md:p-8 border-b border-slate-100 bg-[#F1F5F9]/30 print:p-4 print:pb-2">
+               <div className="flex justify-between items-end">
+                  <div>
+                    <h3 className="text-3xl md:text-4xl font-black text-slate-800 uppercase tracking-tighter leading-none mb-1">D.R.E</h3>
+                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Demonstrativo de Resultado do Exercício</p>
+                  </div>
                   <div className="text-right">
-                    <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Relatório Consolidado</p>
-                    <p className="text-[8px] font-bold text-slate-400 uppercase">{formattedLabel()}</p>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Período de Referência</p>
+                    <p className="text-base font-mono font-black text-slate-900 uppercase">{formattedLabel()}</p>
                   </div>
-                </div>
-              </div>
+               </div>
+            </div>
 
-              {/* Top Summary Cards - VISIBILIDADE MELHORADA */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <IndicatorCard 
-                  label="1. Receita Bruta" 
-                  value={analytics.dre.receitaBruta} 
-                  icon={<BarChart3 size={18}/>}
-                  color="blue"
-                />
-                <IndicatorCard 
-                  label="2. Receita Líquida" 
-                  value={analytics.dre.receitaLiquida} 
-                  icon={<Target size={18}/>}
-                  color="blue"
-                  sub="(Pós Taxas e Impostos)"
-                />
-                <IndicatorCard 
-                  label="3. Lucro Bruto" 
-                  value={analytics.dre.lucroBruto} 
-                  icon={<Wallet size={18}/>}
-                  color="green"
-                  sub="(Pós CMV)"
-                />
-              </div>
+            {/* Corpo do DRE com fontes maiores e menos padding */}
+            <div className="p-6 md:p-10 space-y-1.5 print:p-4 print:space-y-1">
+              <DRETitle label="1. RECEITA OPERACIONAL BRUTA" value={analytics.dre.receitaBruta} />
+              <DRERow label="(+) Vendas em Dinheiro" value={analytics.dre.faturamento.dinheiro} rb={rb} />
+              <DRERow label="(+) Recebimentos PIX" value={analytics.dre.faturamento.pix} rb={rb} />
+              <DRERow label="(+) Vendas em Cartão (Crédito/Débito)" value={analytics.dre.faturamento.debito + analytics.dre.faturamento.credito} rb={rb} />
+              
+              <div className="h-2 print:h-1"></div>
 
-              <div className="space-y-6">
-                {/* Seção Analítica de Receita */}
-                <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 print:bg-white">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-6">Detalhamento de Receita</h4>
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
-                    <div className="h-48 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart layout="vertical" data={analytics.dre.revenueChartData} margin={{ left: -20 }}>
-                          <XAxis type="number" hide />
-                          <YAxis type="category" dataKey="name" fontSize={10} fontWeight="900" width={80} axisLine={false} tickLine={false} />
-                          <Tooltip formatter={(val: number) => formatMoney(val)} />
-                          <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                            {analytics.dre.revenueChartData.map((entry, index) => (
-                              <Cell key={`cell-${index}`} fill={entry.color} />
-                            ))}
-                          </Bar>
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="space-y-2">
-                      <DRERow label="(+) Dinheiro" value={analytics.dre.faturamento.dinheiro} />
-                      <DRERow label="(+) Pix" value={analytics.dre.faturamento.pix} />
-                      <DRERow label="(+) Cartões" value={analytics.dre.faturamento.debito + analytics.dre.faturamento.credito} />
-                      <DRERow label="(-) Taxas de Cartão" value={analytics.dre.taxasMaquininha} negative />
-                      <DRERow label="(-) Impostos" value={analytics.dre.impostos} negative />
-                      <div className="pt-2 border-t border-slate-200">
-                        <DRESubtotal label="Receita Líquida" value={analytics.dre.receitaLiquida} />
-                      </div>
-                    </div>
+              <DRERow label="(-) Taxas Adm. de Cartão" value={analytics.dre.taxasMaquininha} rb={rb} isNegative />
+              <DRERow label="(-) Impostos sobre Vendas" value={analytics.dre.impostos} rb={rb} isNegative />
+              
+              <DRESubtotal label="(=) RECEITA OPERACIONAL LÍQUIDA" value={analytics.dre.receitaLiquida} rb={rb} />
+
+              <div className="h-2 print:h-1"></div>
+
+              <DRERow label="(-) Custo Mercadoria Vendida (CMV)" value={analytics.dre.cmv} rb={rb} isNegative />
+              
+              <DRESubtotal label="(=) MARGEM DE CONTRIBUIÇÃO" value={analytics.dre.lucroBruto} rb={rb} highlight />
+
+              <div className="h-2 print:h-1"></div>
+
+              <DRERow label="(-) Despesas Administrativas Fixas" value={analytics.dre.despesasFixas} rb={rb} isNegative />
+              <DRERow label="(-) Outras Despesas Variáveis" value={analytics.dre.despesasVariaveisOutras} rb={rb} isNegative />
+
+              <div className="h-4 print:h-2"></div>
+
+              {/* Resultado Final Compacto */}
+              <div className="bg-slate-900 text-white rounded-[1.5rem] p-6 md:p-8 flex flex-col md:flex-row justify-between items-center shadow-xl relative overflow-hidden print:bg-black print:p-6">
+                <div className="z-10 text-center md:text-left">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 block">Resultado Final</span>
+                  <h4 className="text-3xl font-black uppercase tracking-tighter italic">LUCRO LÍQUIDO</h4>
+                  <div className="mt-1 flex items-center gap-2 px-2 py-0.5 bg-white/10 rounded inline-flex">
+                    <span className="text-[9px] font-black text-slate-200 uppercase">Margem:</span>
+                    <span className="text-[11px] font-mono font-black text-emerald-400">
+                      {formatPercent(analytics.dre.lucroLiquido / rb)}
+                    </span>
                   </div>
                 </div>
 
-                {/* Seção Operacional e Custos */}
-                <div className="space-y-2">
-                  <DRERow label="(-) Custo de Mercadoria (CMV)" value={analytics.dre.cmv} negative large />
-                  <DRESubtotal label="Lucro Bruto Operacional" value={analytics.dre.lucroBruto} highlighted />
-                </div>
-
-                <div className="space-y-2 bg-slate-50/50 p-6 rounded-3xl border border-dashed border-slate-200">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Despesas Administrativas</h4>
-                  <DRERow label="(-) Despesas Fixas (Aluguel, Salários, etc)" value={analytics.dre.despesasFixas} negative />
-                  <DRERow label="(-) Outras Despesas Variáveis" value={analytics.dre.despesasVariaveisOutras} negative />
-                </div>
-
-                {/* Resultado Final - DESTAQUE MÁXIMO */}
-                <div className="mt-8 p-10 bg-slate-900 rounded-[40px] text-white flex flex-col md:flex-row justify-between items-center shadow-2xl print:bg-black print:text-white transition-all hover:scale-[1.01]">
-                   <div className="flex flex-col text-center md:text-left gap-1">
-                      <div className="inline-flex items-center gap-2 px-3 py-1 bg-green-500/20 text-green-400 rounded-full w-fit mx-auto md:mx-0">
-                        <TrendingUp size={12}/>
-                        <span className="text-[9px] font-black uppercase tracking-widest">Resultado Final</span>
-                      </div>
-                      <h4 className="text-4xl font-black uppercase tracking-tighter">LUCRO LÍQUIDO</h4>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest opacity-60">Competência: {formattedLabel()}</p>
-                   </div>
-                   <div className="text-center md:text-right mt-6 md:mt-0">
-                      <p className={`text-6xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                        {formatMoney(analytics.dre.lucroLiquido)}
-                      </p>
-                      <div className="mt-2 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                        Margem Líquida: {analytics.dre.receitaBruta > 0 ? ((analytics.dre.lucroLiquido / analytics.dre.receitaBruta) * 100).toFixed(1) : 0}%
-                      </div>
-                   </div>
-                </div>
-
-                {/* Gráfico de Tendência */}
-                <div className="mt-12 space-y-4 page-break-before">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp size={16} className="text-blue-600"/>
-                    <h5 className="text-[11px] font-black text-slate-800 uppercase tracking-widest">Evolução do Resultado (12 Meses)</h5>
-                  </div>
-                  <div className="h-64 w-full bg-white border border-slate-200 rounded-3xl p-6 shadow-sm">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart data={analytics.dre.historyTrend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                        <defs>
-                          <linearGradient id="colorLucro" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
-                            <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                        <XAxis dataKey="name" fontSize={9} fontWeight="900" axisLine={false} tickLine={false} />
-                        <YAxis fontSize={9} fontWeight="900" axisLine={false} tickLine={false} tickFormatter={(val) => `R$${val/1000}k`} />
-                        <Tooltip formatter={(val: number) => formatMoney(val)} />
-                        <Area type="monotone" dataKey="lucro" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorLucro)" />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
+                <div className="z-10 mt-4 md:mt-0 text-center md:text-right">
+                   <p className={`text-5xl md:text-6xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
+                    {formatMoney(analytics.dre.lucroLiquido)}
+                   </p>
                 </div>
               </div>
             </div>
-          )}
 
-          {reportView === 'audit' && (
-            <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in">
-               <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Conciliação de Saídas</h3>
-               <div className="overflow-hidden border border-slate-200 rounded-2xl">
+            {/* Rodapé Interno do Relatório Compacto */}
+            <div className="px-10 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center no-print">
+               <span className="text-[8px] font-black text-slate-300 uppercase italic">Bem Estar Controle - Gestão Financeira v4.0</span>
+               <span className="text-[8px] font-black text-slate-300 uppercase tracking-widest">{new Date().toLocaleString('pt-BR')}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="max-w-5xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
+             <div className="flex items-center gap-4 mb-6">
+                <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg">
+                  <ClipboardList size={20}/>
+                </div>
+                <div>
+                   <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Detalhamento Auditado</h3>
+                   <p className="text-[9px] font-bold text-slate-400 uppercase">Lista de pagamentos efetuados no período</p>
+                </div>
+             </div>
+
+             <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xl">
                 <table className="w-full border-collapse">
-                  <thead className="bg-slate-50 border-b">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Vencimento</th>
-                      <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Item</th>
-                      <th className="px-6 py-4 text-right text-[10px] font-black text-slate-500 uppercase">Valor Pago</th>
+                  <thead>
+                    <tr className="bg-slate-900 text-white">
+                      <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Vencimento</th>
+                      <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Descrição</th>
+                      <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Natureza</th>
+                      <th className="px-6 py-4 text-right text-[9px] font-black uppercase tracking-widest">Valor</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {analytics.audit.items.map((row, i) => (
-                      <tr key={i} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-6 py-4 text-[11px] font-mono font-bold text-slate-600">{new Date(row.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                        <td className="px-6 py-4 text-[11px] font-black text-slate-800 uppercase">{row.description}</td>
-                        <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-red-600">{formatMoney(row.value)}</td>
+                      <tr key={i} className="hover:bg-slate-50 transition-colors group">
+                        <td className="px-6 py-3 text-[10px] font-mono font-bold text-slate-400">{new Date(row.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
+                        <td className="px-6 py-3">
+                           <p className="text-[11px] font-black text-slate-800 uppercase leading-none mb-0.5">{row.description}</p>
+                           <p className="text-[8px] font-bold text-slate-400 uppercase">{row.supplier}</p>
+                        </td>
+                        <td className="px-6 py-3">
+                           <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-black uppercase border border-slate-200">{row.nature}</span>
+                        </td>
+                        <td className="px-6 py-3 text-right text-[11px] font-mono font-black text-rose-500">{formatMoney(row.value)}</td>
                       </tr>
                     ))}
+                    {analytics.audit.items.length === 0 && (
+                      <tr><td colSpan={4} className="py-20 text-center text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] italic">Sem registros para o filtro selecionado</td></tr>
+                    )}
                   </tbody>
                 </table>
-              </div>
+             </div>
+          </div>
+        )}
+
+        {/* Gráfico de Tendência (Oculto no Print se DRE já estiver grande) */}
+        {reportView === 'dre' && (
+          <div className="max-w-4xl mx-auto mt-6 bg-white border border-slate-200 p-6 rounded-[2rem] shadow-sm no-print print:hidden">
+            <div className="flex items-center gap-3 mb-4">
+              <TrendingUp size={16} className="text-blue-500"/>
+              <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Evolução do Resultado (Últimos 6 Meses)</h4>
             </div>
-          )}
-        </div>
+            <div className="h-48 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={analytics.dre.historyTrend} margin={{ top: 5, right: 5, left: -25, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorTrend" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.2}/>
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                  <XAxis dataKey="name" fontSize={9} fontWeight="900" axisLine={false} tickLine={false} />
+                  <YAxis fontSize={8} fontWeight="900" axisLine={false} tickLine={false} />
+                  <Tooltip 
+                    contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)'}}
+                    formatter={(v: number) => [formatMoney(v), 'Resultado']} 
+                  />
+                  <Area type="monotone" dataKey="lucro" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorTrend)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-// Componente de Card de Indicador para o Topo
-const IndicatorCard = ({ label, value, icon, color, sub }: any) => {
-  const colorStyles: any = {
-    blue: "border-blue-100 bg-blue-50/30 text-blue-600",
-    green: "border-green-100 bg-green-50/30 text-green-600"
-  };
-  
+// COMPONENTES COM FONTES AUMENTADAS
+const DRETitle = ({ label, value }: { label: string, value: number }) => (
+  <div className="flex justify-between items-end pt-6 pb-2 border-b-2 border-slate-900 print:pt-4 print:pb-1">
+    <span className="text-[13px] md:text-[14px] font-black text-slate-900 uppercase tracking-widest">{label}</span>
+    <span className="text-[14px] md:text-[16px] font-mono font-black text-slate-900">{formatMoney(value)}</span>
+  </div>
+);
+
+const DRERow = ({ label, value, rb, isNegative }: any) => {
+  const percent = value / rb;
   return (
-    <div className={`p-6 border rounded-[32px] flex flex-col gap-3 shadow-sm transition-all hover:shadow-md ${colorStyles[color]}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] font-black uppercase tracking-widest opacity-70">{label}</span>
-        <div className="p-2 bg-white rounded-xl shadow-sm">{icon}</div>
+    <div className="flex justify-between items-center py-2 transition-colors hover:bg-slate-50 px-2 rounded-lg print:py-1">
+      <div className="flex items-center gap-3">
+        <span className={`text-[12px] md:text-[13px] font-bold ${isNegative ? 'text-slate-500' : 'text-slate-700'} uppercase tracking-tight`}>{label}</span>
+        <span className="text-[9px] font-black px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md">
+          {formatPercent(percent)}
+        </span>
       </div>
-      <div>
-        <div className="text-2xl font-mono font-black tracking-tighter">{formatMoney(value)}</div>
-        {sub && <div className="text-[8px] font-bold uppercase tracking-widest mt-1 opacity-60">{sub}</div>}
-      </div>
+      <span className={`text-[12px] md:text-[13px] font-mono font-bold ${isNegative ? 'text-rose-500' : 'text-slate-800'}`}>
+        {isNegative && value > 0 ? '-' : ''} {formatMoney(value)}
+      </span>
     </div>
   );
 };
 
-const DRERow = ({ label, value, indent, negative, large }: any) => (
-  <div className={`flex justify-between items-center py-2 ${indent ? 'pl-6' : ''} ${large ? 'py-4' : ''}`}>
-    <span className={`${large ? 'text-[11px] font-black' : 'text-[10px] font-bold'} text-slate-600 uppercase tracking-wide`}>{label}</span>
-    <span className={`${large ? 'text-sm font-black' : 'text-[10px] font-bold'} font-mono ${negative && value > 0 ? 'text-red-500' : 'text-slate-800'}`}>
-      {negative && value > 0 ? '-' : ''} {formatMoney(value)}
-    </span>
-  </div>
-);
-
-const DRESubtotal = ({ label, value, highlighted }: any) => (
-  <div className={`flex justify-between items-center py-4 px-6 rounded-2xl ${highlighted ? 'bg-blue-600 text-white shadow-xl' : 'bg-slate-200/50 text-slate-900 border border-slate-200'}`}>
-    <span className="text-[11px] font-black uppercase tracking-widest">{label}</span>
-    <span className="text-lg font-mono font-black">{formatMoney(value)}</span>
-  </div>
-);
+const DRESubtotal = ({ label, value, rb, highlight }: any) => {
+  const percent = value / rb;
+  return (
+    <div className={`flex justify-between items-center py-3 px-5 rounded-xl mt-2 border ${highlight ? 'bg-slate-900 border-slate-800 text-white shadow-md print:bg-black' : 'bg-slate-100 border-slate-200 text-slate-800'}`}>
+      <div className="flex items-center gap-3">
+        <span className="text-[12px] md:text-[13px] font-black uppercase tracking-widest">{label}</span>
+        <span className={`text-[10px] font-mono font-black ${highlight ? 'text-emerald-400' : 'text-slate-500'}`}>
+          {formatPercent(percent)}
+        </span>
+      </div>
+      <span className={`text-xl font-mono font-black ${highlight ? 'text-white' : 'text-slate-900'}`}>
+        {formatMoney(value)}
+      </span>
+    </div>
+  );
+};
 
 export default Reports;

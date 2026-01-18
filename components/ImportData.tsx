@@ -4,7 +4,7 @@ import * as XLSX from 'https://esm.sh/xlsx';
 import { db } from '../services/db';
 import { 
   FileUp, CheckCircle2, AlertCircle, Loader2, Database, 
-  Download, FileSpreadsheet, X, HardDriveDownload, AlertTriangle, ShieldCheck
+  Download, FileSpreadsheet, HardDriveDownload, AlertTriangle, X
 } from 'lucide-react';
 import { CashEntry, Expense, ExpenseNature, ExpenseStatus } from '../types';
 import ConfirmationModal from './ConfirmationModal';
@@ -16,11 +16,8 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
-  const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
-  const [pendingBackup, setPendingBackup] = useState<any>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const fullBackupInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -42,43 +39,12 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         const rows = data.slice(1).filter((row: any) => row.length > 0);
         setPreview(rows);
       } catch (err) {
-        setError("Erro ao processar arquivo. Verifique se o formato é válido.");
+        setError("Erro ao processar arquivo. Verifique o formato.");
       } finally {
         setLoading(false);
       }
     };
     reader.readAsBinaryString(file);
-  };
-
-  const handleFullBackupUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (evt) => {
-      try {
-        const json = JSON.parse(evt.target?.result as string);
-        if (!json.data || !json.version) throw new Error();
-        setPendingBackup(json);
-        setIsRestoreModalOpen(true);
-      } catch (err) {
-        setError("Arquivo de backup inválido.");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const executeRestore = () => {
-    if (!pendingBackup) return;
-    try {
-      db.restoreFullBackup(pendingBackup);
-      setSuccess("Sistema restaurado com sucesso!");
-      onSuccess();
-      setPendingBackup(null);
-    } catch (err) {
-      setError("Falha ao restaurar backup.");
-    }
   };
 
   const executeImport = () => {
@@ -89,7 +55,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
           let dateStr = row[0] instanceof Date ? row[0].toISOString().split('T')[0] : String(row[0]).trim();
           db.upsertEntry({
             date: dateStr,
-            shift: (String(row[1]).includes('CAIXA') ? row[1] : `CAIXA 01 (MANHÃ)`) as any,
+            shift: (String(row[1]).includes('CAIXA') ? row[1] : `CAIXA ${String(row[1]).padStart(2, '0')} (MANHÃ)`) as any,
             cash: parseFloat(row[2]) || 0,
             pix: parseFloat(row[3]) || 0,
             credit: parseFloat(row[4]) || 0,
@@ -111,96 +77,172 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
           });
         });
       }
-      setSuccess(`${preview.length} registros processados!`);
+      setSuccess(`${preview.length} registros sincronizados!`);
       setPreview([]);
       onSuccess();
     } catch (err) {
-      setError("Erro durante a gravação.");
+      setError("Erro na gravação dos dados.");
     }
   };
 
+  const handleExportData = (type: 'caixa' | 'contas') => {
+    let headers: string[] = [];
+    let rows: any[][] = [];
+    if (type === 'caixa') {
+      headers = ["Data", "Caixa", "Dinheiro", "Pix", "Credito", "Debito", "Sangria"];
+      rows = db.getEntries().map(e => [e.date, e.shift, e.cash.toFixed(2), e.pix.toFixed(2), e.credit.toFixed(2), e.debit.toFixed(2), (e.sangria || 0).toFixed(2)]);
+    } else {
+      headers = ["Descricao", "Vencimento", "Valor", "Categoria", "Status"];
+      rows = db.getExpenses().map(e => [e.description, e.dueDate, e.value.toFixed(2), e.nature, e.status]);
+    }
+    const csvContent = [headers, ...rows].map(e => e.join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `export_${type}_${new Date().toISOString().split('T')[0]}.csv`;
+    link.click();
+  };
+
   return (
-    <div className="flex-1 flex flex-col gap-6 w-full max-w-5xl mx-auto py-2">
+    <div className="flex-1 flex flex-col gap-6 overflow-y-auto custom-scrollbar max-w-5xl mx-auto w-full py-4 px-4">
       <ConfirmationModal 
         isOpen={isClearModalOpen}
         onClose={() => setIsClearModalOpen(false)}
-        onConfirm={() => { db.clearAllData(); onSuccess(); setIsClearModalOpen(false); setSuccess("Dados limpos."); }}
-        title="Apagar Tudo?"
-        message="Esta ação é irreversível. Todos os dados serão deletados."
+        onConfirm={() => { db.clearAllData(); window.location.reload(); }}
+        title="Formatar Banco de Dados?"
+        message="Esta ação apagará absolutamente TODOS os registros salvos. Esta operação não pode ser desfeita."
       />
 
-      <ConfirmationModal 
-        isOpen={isRestoreModalOpen}
-        onClose={() => setIsRestoreModalOpen(false)}
-        onConfirm={executeRestore}
-        title="Restaurar Banco de Dados?"
-        message="O arquivo de backup substituirá todos os dados atuais. Deseja prosseguir?"
-      />
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Painel de Importação Individual */}
+        <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm space-y-6">
+          <div className="flex flex-col gap-4">
+            <div>
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                <FileSpreadsheet className="text-blue-500" size={24}/> Importar CSV/Excel
+              </h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Sincronização modular por arquivo</p>
+            </div>
 
-      {/* NOVO CARD DE RESTAURAÇÃO DE SEGURANÇA */}
-      <div className="bg-white border-2 border-slate-900 p-8 rounded-[32px] shadow-xl flex flex-col md:flex-row items-center gap-8">
-        <div className="w-16 h-16 bg-slate-900 text-green-400 rounded-2xl flex items-center justify-center shrink-0 shadow-lg">
-          <ShieldCheck size={32}/>
-        </div>
-        <div className="flex-1 text-center md:text-left">
-          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tighter">Restauração do Sistema</h3>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Utilize um arquivo .json gerado anteriormente para recuperar seus dados</p>
-        </div>
-        <label className="px-8 py-4 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-800 transition-all cursor-pointer shadow-lg active:scale-95">
-          Carregar Arquivo JSON
-          <input type="file" ref={fullBackupInputRef} className="hidden" accept=".json" onChange={handleFullBackupUpload} />
-        </label>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white border border-slate-200 p-8 rounded-[32px] shadow-sm space-y-6">
-          <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
-            <FileSpreadsheet className="text-blue-500" size={18}/> Importar Planilhas (CSV/XLSX)
-          </h2>
-          
-          <div className="flex bg-slate-100 p-1 rounded-xl">
-            {(['caixa', 'contas'] as const).map(t => (
+            <div className="flex bg-slate-100 p-1 rounded-xl w-full">
               <button 
-                key={t}
-                onClick={() => setImportType(t)}
-                className={`flex-1 py-2 rounded-lg text-[9px] font-black uppercase transition-all ${importType === t ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+                onClick={() => setImportType('caixa')}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${importType === 'caixa' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
               >
-                {t === 'caixa' ? 'Fluxo de Caixa' : 'Contas a Pagar'}
+                Movimento Caixa
               </button>
-            ))}
+              <button 
+                onClick={() => setImportType('contas')}
+                className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${importType === 'contas' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400'}`}
+              >
+                Contas a Pagar
+              </button>
+            </div>
           </div>
 
-          <label className="group cursor-pointer block">
+          <label className="relative group cursor-pointer block">
             <input type="file" ref={fileInputRef} className="hidden" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} />
-            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 transition-all group-hover:border-blue-400 group-hover:bg-blue-50/50">
-              <Download size={24} className="text-slate-300 group-hover:text-blue-500 transition-all"/>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Selecionar Arquivo</p>
+            <div className="border-2 border-dashed border-slate-200 rounded-2xl p-10 flex flex-col items-center justify-center gap-3 transition-all group-hover:border-blue-400 group-hover:bg-blue-50/30">
+              <div className="w-14 h-14 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition-all shadow-inner">
+                {loading ? <Loader2 size={24} className="animate-spin" /> : <Download size={24} />}
+              </div>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Selecionar arquivo (.xlsx ou .csv)</p>
             </div>
           </label>
 
           {preview.length > 0 && (
-            <button onClick={executeImport} className="w-full h-12 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 transition-all">
-              Confirmar Importação ({preview.length})
+            <button 
+              onClick={executeImport}
+              className="w-full h-14 bg-blue-600 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-blue-200 active:scale-95"
+            >
+              <CheckCircle2 size={18}/> Iniciar Processamento ({preview.length} linhas)
             </button>
           )}
         </div>
 
-        <div className="bg-slate-100 border border-slate-200 p-8 rounded-[32px] flex flex-col items-center justify-center text-center space-y-4">
-          <AlertTriangle size={48} className="text-orange-500"/>
-          <div>
-            <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Zona de Limpeza</h3>
-            <p className="text-[9px] font-bold text-slate-500 uppercase mt-2 leading-relaxed">Apague todos os dados locais deste navegador para reiniciar o sistema do zero.</p>
+        {/* Painel de Exportação Individual */}
+        <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm space-y-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-slate-100 rounded-2xl text-slate-500">
+              <Database size={24}/>
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Exportar Módulos</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase">Extração em formato CSV (Excel)</p>
+            </div>
           </div>
-          <button onClick={() => setIsClearModalOpen(true)} className="px-6 py-3 bg-red-600 text-white rounded-xl text-[9px] font-black uppercase tracking-widest hover:bg-red-700 transition-all active:scale-95 shadow-lg">
-            Formatar Banco de Dados
-          </button>
+
+          <div className="space-y-4">
+            <button 
+              onClick={() => handleExportData('caixa')}
+              className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between group hover:bg-slate-100 transition-all"
+            >
+              <div className="flex items-center gap-3">
+                 <div className="p-2 bg-white rounded-lg shadow-sm text-green-600"><HardDriveDownload size={18}/></div>
+                 <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Extrair Caixa Completo</span>
+              </div>
+              <ChevronRight size={16} className="text-slate-300"/>
+            </button>
+
+            <button 
+              onClick={() => handleExportData('contas')}
+              className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl flex items-center justify-between group hover:bg-slate-100 transition-all"
+            >
+              <div className="flex items-center gap-3">
+                 <div className="p-2 bg-white rounded-lg shadow-sm text-blue-600"><HardDriveDownload size={18}/></div>
+                 <span className="text-[11px] font-black text-slate-600 uppercase tracking-widest">Extrair Contas a Pagar</span>
+              </div>
+              <ChevronRight size={16} className="text-slate-300"/>
+            </button>
+          </div>
+          
+          <div className="p-5 bg-blue-50 rounded-2xl border border-blue-100 flex gap-4">
+             <AlertCircle className="text-blue-500 shrink-0" size={20}/>
+             <p className="text-[9px] font-bold text-blue-700 uppercase leading-relaxed">
+               As funções acima exportam tabelas individuais. Para salvar o sistema completo (incluindo fornecedores e configurações), utilize o <b>Backup Consolidado</b> na barra lateral esquerda.
+             </p>
+          </div>
         </div>
       </div>
 
-      {error && <div className="p-4 bg-red-50 border border-red-100 rounded-xl text-red-600 text-[10px] font-black uppercase">{error}</div>}
-      {success && <div className="p-4 bg-green-50 border border-green-100 rounded-xl text-green-600 text-[10px] font-black uppercase">{success}</div>}
+      {/* Mensagens de Feedback */}
+      {(error || success) && (
+        <div className={`p-4 border rounded-xl flex items-center gap-3 animate-in fade-in zoom-in-95 ${error ? 'bg-red-50 border-red-100 text-red-600' : 'bg-green-50 border-green-100 text-green-600'}`}>
+          {error ? <AlertCircle size={20}/> : <CheckCircle2 size={20}/>}
+          <span className="text-[10px] font-black uppercase tracking-widest">{error || success}</span>
+          <button onClick={() => {setError(null); setSuccess(null);}} className="ml-auto opacity-50 hover:opacity-100"><X size={16}/></button>
+        </div>
+      )}
+
+      {/* Área Crítica */}
+      <div className="mt-4 border-t border-slate-200 pt-8">
+        <div className="p-8 bg-red-50/50 border border-red-100 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-5">
+             <div className="w-14 h-14 bg-white text-red-500 rounded-2xl flex items-center justify-center shrink-0 shadow-sm border border-red-50">
+               <AlertTriangle size={28}/>
+             </div>
+             <div>
+               <h3 className="text-base font-black text-red-800 uppercase tracking-tight leading-tight">Limpeza Total do Banco</h3>
+               <p className="text-[10px] text-red-600/60 font-bold uppercase leading-relaxed max-w-sm">
+                 Esta ação apagará todos os dados locais. Recomendamos exportar um backup JSON na barra lateral antes de prosseguir.
+               </p>
+             </div>
+          </div>
+          <button 
+            onClick={() => setIsClearModalOpen(true)}
+            className="px-10 py-4 bg-red-600 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-red-700 transition-all shadow-xl shadow-red-100 active:scale-95"
+          >
+            Formatar Banco
+          </button>
+        </div>
+      </div>
     </div>
   );
 };
+
+// Componente auxiliar interno para a seta
+const ChevronRight = ({ className, size }: { className?: string, size?: number }) => (
+  <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+);
 
 export default ImportData;

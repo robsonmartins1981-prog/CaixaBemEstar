@@ -6,7 +6,16 @@ const KEYS = {
   EXPENSES: 'fm_expenses',
   RATES: 'fm_card_rates',
   SUPPLIERS: 'fm_suppliers',
-  SHEETS_URL: 'fm_sheets_url'
+  RESTORE_POINT: 'fm_auto_restore_point'
+};
+
+const getMachineId = () => {
+  let id = localStorage.getItem('fm_machine_id');
+  if (!id) {
+    id = 'BE-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+    localStorage.setItem('fm_machine_id', id);
+  }
+  return id;
 };
 
 const generateId = () => {
@@ -18,33 +27,12 @@ const generateId = () => {
 
 export const db = {
   generateId,
-
-  setSheetsUrl: (url: string) => localStorage.setItem(KEYS.SHEETS_URL, url),
-  getSheetsUrl: () => localStorage.getItem(KEYS.SHEETS_URL),
-
-  syncToSheets: async () => {
-    const url = db.getSheetsUrl();
-    if (!url) throw new Error("URL do Google Sheets não configurada.");
-
-    const backup = db.getFullBackup();
-    const tables = [
-      { tab: 'Entries', data: backup.data.entries },
-      { tab: 'Expenses', data: backup.data.expenses },
-      { tab: 'Suppliers', data: backup.data.suppliers }
-    ];
-
-    for (const table of tables) {
-      for (const item of table.data) {
-        await fetch(url, {
-          method: 'POST',
-          mode: 'no-cors',
-          body: JSON.stringify({ tab: table.tab, data: item })
-        });
-      }
-    }
-    return true;
-  },
   
+  createRestorePoint() {
+    const data = db.getFullBackup();
+    localStorage.setItem(KEYS.RESTORE_POINT, JSON.stringify(data));
+  },
+
   getCardRates: (): CardRates => {
     const data = localStorage.getItem(KEYS.RATES);
     return data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
@@ -182,7 +170,8 @@ export const db = {
 
   getFullBackup: () => {
     return {
-      version: '2.0',
+      version: '4.0',
+      machineId: getMachineId(),
       timestamp: new Date().toISOString(),
       data: {
         entries: db.getEntries(),
@@ -194,23 +183,28 @@ export const db = {
   },
 
   restoreFullBackup: (backupObj: any) => {
-    if (!backupObj || !backupObj.data) throw new Error("Formato de backup inválido.");
-    const { entries, expenses, suppliers, rates } = backupObj.data;
-    if (entries) localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
-    if (expenses) localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
-    if (suppliers) localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
-    if (rates) localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
-    return true;
+    try {
+      if (!backupObj || !backupObj.data) return false;
+      const { entries, expenses, suppliers, rates } = backupObj.data;
+      db.createRestorePoint();
+      localStorage.setItem(KEYS.ENTRIES, JSON.stringify(Array.isArray(entries) ? entries : []));
+      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(Array.isArray(expenses) ? expenses : []));
+      localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(Array.isArray(suppliers) ? suppliers : []));
+      if (rates) localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
+      return true;
+    } catch (e) {
+      return false;
+    }
   },
 
   clearAllData: () => {
-    localStorage.removeItem(KEYS.ENTRIES);
-    localStorage.removeItem(KEYS.EXPENSES);
-    localStorage.removeItem(KEYS.RATES);
-    localStorage.removeItem(KEYS.SUPPLIERS);
+    db.createRestorePoint();
+    Object.values(KEYS).forEach(key => localStorage.removeItem(key));
   },
 
   seedInitialData: (csvData: string) => {
+    const entries = db.getEntries();
+    if (entries.length > 0) return 0;
     const lines = csvData.trim().split('\n');
     const startIdx = lines[0].toLowerCase().includes('data') ? 1 : 0;
     let importCount = 0;
