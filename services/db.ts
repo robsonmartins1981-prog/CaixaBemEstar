@@ -6,6 +6,7 @@ const KEYS = {
   EXPENSES: 'fm_expenses',
   RATES: 'fm_card_rates',
   SUPPLIERS: 'fm_suppliers',
+  SHEETS_URL: 'fm_sheets_url'
 };
 
 const generateId = () => {
@@ -17,10 +18,35 @@ const generateId = () => {
 
 export const db = {
   generateId,
+
+  setSheetsUrl: (url: string) => localStorage.setItem(KEYS.SHEETS_URL, url),
+  getSheetsUrl: () => localStorage.getItem(KEYS.SHEETS_URL),
+
+  syncToSheets: async () => {
+    const url = db.getSheetsUrl();
+    if (!url) throw new Error("URL do Google Sheets não configurada.");
+
+    const backup = db.getFullBackup();
+    const tables = [
+      { tab: 'Entries', data: backup.data.entries },
+      { tab: 'Expenses', data: backup.data.expenses },
+      { tab: 'Suppliers', data: backup.data.suppliers }
+    ];
+
+    for (const table of tables) {
+      for (const item of table.data) {
+        await fetch(url, {
+          method: 'POST',
+          mode: 'no-cors',
+          body: JSON.stringify({ tab: table.tab, data: item })
+        });
+      }
+    }
+    return true;
+  },
   
   getCardRates: (): CardRates => {
     const data = localStorage.getItem(KEYS.RATES);
-    // Padrão solicitado: Débito 0.8% e Crédito 2.8%
     return data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
   },
 
@@ -33,7 +59,6 @@ export const db = {
       const data = localStorage.getItem(KEYS.ENTRIES);
       return data ? JSON.parse(data) : [];
     } catch (e) {
-      console.error("Erro ao ler entradas do banco local:", e);
       return [];
     }
   },
@@ -41,7 +66,6 @@ export const db = {
   getNextCode: (): string => {
     const entries = db.getEntries();
     if (entries.length === 0) return '0001';
-    
     const codes = entries.map(e => parseInt(e.code, 10)).filter(n => !isNaN(n));
     const maxCode = codes.length > 0 ? Math.max(...codes) : 0;
     return (maxCode + 1).toString().padStart(4, '0');
@@ -50,29 +74,17 @@ export const db = {
   upsertEntry: (entry: Omit<CashEntry, 'id' | 'code'>) => {
     const entries = db.getEntries();
     const existingIndex = entries.findIndex(e => e.date === entry.date && e.shift === entry.shift);
-    
     if (existingIndex !== -1) {
       entries[existingIndex] = { ...entries[existingIndex], ...entry, sangria: entry.sangria || 0 };
     } else {
-      const newEntry: CashEntry = {
-        ...entry,
-        id: generateId(),
-        code: db.getNextCode(),
-        sangria: entry.sangria || 0
-      };
-      entries.push(newEntry);
+      entries.push({ ...entry, id: generateId(), code: db.getNextCode(), sangria: entry.sangria || 0 });
     }
     localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
   saveEntry: (entry: Omit<CashEntry, 'code'>) => {
     const entries = db.getEntries();
-    const newEntry: CashEntry = {
-      ...entry,
-      sangria: entry.sangria || 0,
-      code: db.getNextCode()
-    };
-    entries.push(newEntry);
+    entries.push({ ...entry, sangria: entry.sangria || 0, code: db.getNextCode() });
     localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
@@ -90,19 +102,13 @@ export const db = {
       const data = localStorage.getItem(KEYS.EXPENSES);
       return data ? JSON.parse(data) : [];
     } catch (e) {
-      console.error("Erro ao ler despesas do banco local:", e);
       return [];
     }
   },
 
   upsertExpense: (expense: Omit<Expense, 'id'>) => {
     const expenses = db.getExpenses();
-    const existingIndex = expenses.findIndex(e => 
-      e.description === expense.description && 
-      e.dueDate === expense.dueDate && 
-      Math.abs(e.value - expense.value) < 0.01
-    );
-
+    const existingIndex = expenses.findIndex(e => e.description === expense.description && e.dueDate === expense.dueDate && Math.abs(e.value - expense.value) < 0.01);
     if (existingIndex !== -1) {
       expenses[existingIndex] = { ...expenses[existingIndex], ...expense };
     } else {
@@ -174,7 +180,6 @@ export const db = {
     localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
   },
 
-  // MÉTODOS DE BACKUP CONSOLIDADO
   getFullBackup: () => {
     return {
       version: '2.0',
@@ -190,14 +195,11 @@ export const db = {
 
   restoreFullBackup: (backupObj: any) => {
     if (!backupObj || !backupObj.data) throw new Error("Formato de backup inválido.");
-    
     const { entries, expenses, suppliers, rates } = backupObj.data;
-    
     if (entries) localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
     if (expenses) localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
     if (suppliers) localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
     if (rates) localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
-    
     return true;
   },
 
@@ -212,14 +214,11 @@ export const db = {
     const lines = csvData.trim().split('\n');
     const startIdx = lines[0].toLowerCase().includes('data') ? 1 : 0;
     let importCount = 0;
-
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
-
       const [date, shiftStr, cash, credit, debit, pix] = line.split(',');
       const mappedShift = shiftStr.trim() === 'Manhã' ? 'CAIXA 01 (MANHÃ)' : 'CAIXA 02 (TARDE)';
-
       db.upsertEntry({
         date: date.trim(),
         shift: mappedShift as any,
