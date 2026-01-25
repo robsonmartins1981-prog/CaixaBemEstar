@@ -5,7 +5,8 @@ import { db } from '../services/db';
 import { NATURES, COST_TYPES } from '../constants';
 import { 
   Plus, Trash2, Receipt, List, CheckCircle, Clock, 
-  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, Phone, Mail, AlertTriangle, ArrowUpDown, ChevronUp
+  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, AlertTriangle, ArrowUpDown, ChevronUp, Repeat,
+  CalendarDays
 } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -17,7 +18,7 @@ interface AccountsPayableProps {
 const formatMoney = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type FilterStatus = 'Todos' | 'Pendentes' | 'Pagos' | 'Vencidos' | 'A Vencer';
+type FilterStatus = 'Todos' | 'Agendadas' | 'Pagas' | 'Vencidas' | 'Vencendo (7 dias)';
 type SortConfig = { key: keyof Expense; direction: 'asc' | 'desc' } | null;
 
 const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }) => {
@@ -31,6 +32,11 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dueDate', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Estados para Parcelamento
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [installmentsCount, setInstallmentsCount] = useState(2);
+  const [intervalDays, setIntervalDays] = useState(30);
+
   const dropdownRef = useRef<HTMLDivElement>(null);
   
   const [formData, setFormData] = useState<Omit<Expense, 'id'>>({
@@ -82,12 +88,16 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     });
     setEditingId(null);
     setShowForm(false);
+    setIsInstallment(false);
+    setInstallmentsCount(2);
+    setIntervalDays(30);
   };
 
   const handleEdit = (expense: Expense) => {
     setFormData({ ...expense });
     setEditingId(expense.id);
     setShowForm(true);
+    setIsInstallment(false);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -95,7 +105,23 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     if (editingId) {
       db.updateExpense(editingId, formData);
     } else {
-      db.saveExpense(formData);
+      if (isInstallment && installmentsCount > 1) {
+        const valuePerInstallment = formData.value / installmentsCount;
+        const baseDate = new Date(formData.dueDate + 'T12:00:00');
+        for (let i = 0; i < installmentsCount; i++) {
+          const installmentDate = new Date(baseDate);
+          installmentDate.setDate(baseDate.getDate() + (i * intervalDays));
+          const installmentData = {
+            ...formData,
+            description: `${formData.description} [${String(i + 1).padStart(2, '0')}/${String(installmentsCount).padStart(2, '0')}]`,
+            dueDate: installmentDate.toISOString().split('T')[0],
+            value: valuePerInstallment
+          };
+          db.saveExpense(installmentData);
+        }
+      } else {
+        db.saveExpense(formData);
+      }
     }
     onSuccess();
     resetForm();
@@ -137,10 +163,17 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
 
       if (!searchMatch) return false;
 
-      if (filterStatus === 'Pendentes') return exp.status === 'Pendente';
-      if (filterStatus === 'Pagos') return exp.status === 'Pago';
-      if (filterStatus === 'Vencidos') return exp.status === 'Pendente' && vStatus === 'late';
-      if (filterStatus === 'A Vencer') return exp.status === 'Pendente' && vStatus !== 'late';
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      const limit7Days = new Date(today);
+      limit7Days.setDate(today.getDate() + 7);
+      const due = new Date(exp.dueDate + 'T12:00:00');
+      due.setHours(0,0,0,0);
+
+      if (filterStatus === 'Agendadas') return exp.status === 'Pendente' && due >= today;
+      if (filterStatus === 'Pagas') return exp.status === 'Pago';
+      if (filterStatus === 'Vencidas') return exp.status === 'Pendente' && due < today;
+      if (filterStatus === 'Vencendo (7 dias)') return exp.status === 'Pendente' && due >= today && due <= limit7Days;
       return true;
     });
 
@@ -219,7 +252,9 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       {showForm && (
         <div className="bg-white border border-slate-200 shadow-xl rounded-2xl overflow-visible animate-in slide-in-from-top-4 duration-300 shrink-0">
           <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-800">Cadastro de Título</h3>
+            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-800">
+              {editingId ? 'Editar Título' : 'Cadastro de Título'}
+            </h3>
           </div>
           <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4 overflow-visible">
             <div className="md:col-span-2 space-y-1 relative" ref={dropdownRef}>
@@ -256,11 +291,11 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
               <input type="text" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Data Vencimento</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Vencimento</label>
               <input type="date" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" value={formData.dueDate} onChange={e => setFormData({ ...formData, dueDate: e.target.value })} />
             </div>
             <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor do Título</label>
+              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor</label>
               <input type="text" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none font-mono" value={formData.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} onChange={handleValueChange} />
             </div>
             <div className="space-y-1">
@@ -269,9 +304,48 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                 {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
               </select>
             </div>
-            <div className="flex items-end">
+
+            <div className="flex items-end gap-3 md:col-span-1">
+               <button 
+                type="button"
+                disabled={!!editingId}
+                onClick={() => setIsInstallment(!isInstallment)}
+                className={`h-10 px-4 rounded-lg flex items-center gap-2 text-[9px] font-black uppercase transition-all border ${
+                  isInstallment 
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-md' 
+                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 disabled:opacity-30'
+                }`}
+               >
+                 <Repeat size={14}/> {isInstallment ? 'Parcelado' : 'Parcelar?'}
+               </button>
+            </div>
+
+            {isInstallment && !editingId && (
+              <>
+                <div className="space-y-1 animate-in zoom-in-95">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Qtd. Parcelas</label>
+                  <input 
+                    type="number" min="2" max="100"
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" 
+                    value={installmentsCount} 
+                    onChange={e => setInstallmentsCount(parseInt(e.target.value) || 2)} 
+                  />
+                </div>
+                <div className="space-y-1 animate-in zoom-in-95">
+                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Intervalo (Dias)</label>
+                  <input 
+                    type="number" min="1" max="365"
+                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" 
+                    value={intervalDays} 
+                    onChange={e => setIntervalDays(parseInt(e.target.value) || 30)} 
+                  />
+                </div>
+              </>
+            )}
+
+            <div className={`flex items-end ${isInstallment ? 'md:col-span-4' : 'md:col-span-1'}`}>
               <button type="submit" className="w-full h-10 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
-                {editingId ? 'Salvar Alterações' : 'Confirmar Título'}
+                {editingId ? 'Salvar Alterações' : isInstallment ? 'Confirmar Parcelamento' : 'Confirmar Título'}
               </button>
             </div>
           </form>
@@ -281,7 +355,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       {/* FILTROS E PESQUISA */}
       <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col xl:flex-row items-center justify-between gap-4 shadow-sm shrink-0">
         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto overflow-x-auto no-scrollbar">
-          {(['Todos', 'Pendentes', 'Pagos', 'Vencidos', 'A Vencer'] as FilterStatus[]).map(s => (
+          {(['Todos', 'Agendadas', 'Pagas', 'Vencidas', 'Vencendo (7 dias)'] as FilterStatus[]).map(s => (
             <button
               key={s}
               onClick={() => setFilterStatus(s)}
@@ -297,7 +371,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
           <input 
             type="text"
-            placeholder="Buscar fornecedor, natureza ou descrição..."
+            placeholder="Buscar por fornecedor ou descrição..."
             className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
