@@ -34,6 +34,12 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     
     const netBalance = totalIn - totalTaxas - totalOutPaid;
 
+    // Cálculos de Médias
+    const uniqueDays = new Set(filteredEntries.map(e => e.date)).size;
+    const totalShifts = filteredEntries.length;
+    const dailyAverage = totalIn / (uniqueDays || 1);
+    const shiftAverage = totalIn / (totalShifts || 1);
+
     const timelineMap: Record<string, { date: string, entradas: number, saidas: number }> = {};
     filteredEntries.forEach(curr => {
       const date = curr.date;
@@ -48,7 +54,15 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
 
     const chartTimeline = Object.values(timelineMap).sort((a, b) => a.date.localeCompare(b.date));
 
-    return { totalIn, totalOutPaid, totalOutPending, netBalance, chartTimeline };
+    return { 
+      totalIn, 
+      totalOutPaid, 
+      totalOutPending, 
+      netBalance, 
+      dailyAverage, 
+      shiftAverage,
+      chartTimeline 
+    };
   }, [entries, expenses, filterMonth, rates]);
 
   const handleAdjustMonth = (delta: number) => {
@@ -77,39 +91,57 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         </div>
       </div>
 
-      {/* Grid de KPIs Otimizado */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+      {/* Grid de KPIs Expandido */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 shrink-0">
         <IndicatorCard 
           title="Faturamento Bruto" 
           value={stats.totalIn} 
-          sub="Volume total de entradas" 
+          sub="Volume total do mês" 
           icon="📈" 
           color="border-green-100" 
           iconBg="bg-green-500"
           valColor="text-green-600"
         />
         <IndicatorCard 
-          title="Custos Liquidados" 
+          title="Média Diária" 
+          value={stats.dailyAverage} 
+          sub="Média por dia útil" 
+          icon="🗓️" 
+          color="border-emerald-100" 
+          iconBg="bg-emerald-600"
+          valColor="text-emerald-600"
+        />
+        <IndicatorCard 
+          title="Média do Caixa" 
+          value={stats.shiftAverage} 
+          sub="Ticket médio por turno" 
+          icon="🧮" 
+          color="border-cyan-100" 
+          iconBg="bg-cyan-600"
+          valColor="text-cyan-600"
+        />
+        <IndicatorCard 
+          title="Custos Pagos" 
           value={stats.totalOutPaid} 
-          sub="Despesas pagas no período" 
+          sub="Despesas liquidadas" 
           icon="💸" 
           color="border-blue-100" 
           iconBg="bg-blue-600"
           valColor="text-blue-600"
         />
         <IndicatorCard 
-          title="Custos Agendados" 
+          title="Custos Pendentes" 
           value={stats.totalOutPending} 
-          sub="Pendências a vencer" 
+          sub="Previsão a vencer" 
           icon="⏳" 
           color="border-orange-100" 
           iconBg="bg-orange-500"
           valColor="text-orange-600"
         />
         <IndicatorCard 
-          title="Faturamento Líquido" 
+          title="Resultado Líquido" 
           value={stats.netBalance} 
-          sub="Disponibilidade em caixa" 
+          sub="Sobra operacional" 
           icon="💎" 
           color="border-slate-200" 
           iconBg="bg-slate-900"
@@ -151,25 +183,25 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
 };
 
 const IndicatorCard = ({ title, value, sub, icon, color, iconBg, valColor }: any) => (
-  <div className={`bg-white border-2 ${color} p-5 shadow-sm flex flex-col justify-between gap-6 rounded-[2rem] transition-all hover:shadow-md hover:-translate-y-1 group relative overflow-hidden`}>
+  <div className={`bg-white border-2 ${color} p-4 shadow-sm flex flex-col justify-between gap-4 rounded-[1.8rem] transition-all hover:shadow-md hover:-translate-y-1 group relative overflow-hidden`}>
     <div className="flex items-start justify-between z-10">
-      <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shrink-0 shadow-lg ${iconBg} text-xl transition-transform group-hover:scale-110`}>
+      <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-lg ${iconBg} text-base transition-transform group-hover:scale-110`}>
         {icon}
       </div>
       <div className="text-right">
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1.5">{title}</p>
-        <p className="text-[8px] font-bold text-slate-300 uppercase tracking-tight">{sub}</p>
+        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">{title}</p>
+        <p className="text-[7px] font-bold text-slate-300 uppercase tracking-tight">{sub}</p>
       </div>
     </div>
     
     <div className="z-10 mt-1">
-      <p className={`text-2xl font-mono font-black tracking-tighter leading-none ${valColor}`}>
+      <p className={`text-lg font-mono font-black tracking-tighter leading-none ${valColor}`}>
         {formatMoney(value)}
       </p>
     </div>
 
     {/* Sutil background decoration */}
-    <div className={`absolute -bottom-6 -right-6 w-24 h-24 rounded-full opacity-[0.03] ${iconBg}`}></div>
+    <div className={`absolute -bottom-6 -right-6 w-16 h-16 rounded-full opacity-[0.03] ${iconBg}`}></div>
   </div>
 );
 

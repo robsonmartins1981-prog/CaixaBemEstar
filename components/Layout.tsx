@@ -10,7 +10,7 @@ import { db } from '../services/db';
 import ConfirmationModal from './ConfirmationModal';
 
 interface LayoutProps {
-  children: React.愈Node;
+  children: React.ReactNode;
   activeTab: string;
   setActiveTab: (tab: string) => void;
 }
@@ -138,7 +138,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
                   className="w-full py-2.5 bg-slate-700 hover:bg-slate-600 rounded-xl transition-all border border-slate-600 flex items-center justify-center gap-2 active:scale-95 group"
                 >
                   <HardDriveDownload size={14} className="text-slate-300 group-hover:translate-y-0.5 transition-transform"/>
-                  <span className="text-[9px] font-black uppercase text-white">Exportar JSON</span>
+                  <span className="text-[9px] font-black uppercase text-white">Exportar</span>
                 </button>
                 
                 <label className="w-full py-2.5 bg-blue-600/10 hover:bg-blue-600/20 rounded-xl transition-all border border-blue-500/30 flex items-center justify-center gap-2 cursor-pointer active:scale-95 group">
