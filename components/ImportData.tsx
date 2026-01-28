@@ -36,7 +36,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
         
-        const rows = data.slice(1).filter((row: any) => row.length > 0);
+        const rows = data.slice(1).filter((row: any) => row.length > 0 && row[0] !== undefined);
         setPreview(rows);
       } catch (err) {
         setError("Erro ao processar arquivo. Verifique o formato.");
@@ -53,35 +53,39 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
       if (importType === 'caixa') {
         preview.forEach(row => {
           let dateStr = row[0] instanceof Date ? row[0].toISOString().split('T')[0] : String(row[0]).trim();
+          if (!dateStr || dateStr === 'undefined') return;
+
           db.upsertEntry({
             date: dateStr,
-            shift: (String(row[1]).includes('CAIXA') ? row[1] : `CAIXA ${String(row[1]).padStart(2, '0')} (MANHÃ)`) as any,
-            cash: parseFloat(row[2]) || 0,
-            pix: parseFloat(row[3]) || 0,
-            credit: parseFloat(row[4]) || 0,
-            debit: parseFloat(row[5]) || 0,
-            sangria: parseFloat(row[6]) || 0
+            shift: (String(row[1] || '').includes('CAIXA') ? row[1] : `CAIXA ${String(row[1] || '01').padStart(2, '0')} (MANHÃ)`) as any,
+            cash: Number(row[2]) || 0,
+            pix: Number(row[3]) || 0,
+            credit: Number(row[4]) || 0,
+            debit: Number(row[5]) || 0,
+            sangria: Number(row[6]) || 0
           });
         });
       } else {
         preview.forEach(row => {
-          let dateStr = row[1] instanceof Date ? row[1].toISOString().split('T')[0] : String(row[1]).trim();
+          let dateStr = row[1] instanceof Date ? row[1].toISOString().split('T')[0] : String(row[1] || '').trim();
+          if (!dateStr || dateStr === 'undefined') return;
+
           db.upsertExpense({
-            description: String(row[0]),
-            supplier: String(row[0]),
+            description: String(row[0] || 'Importado'),
+            supplier: String(row[0] || 'Fornecedor Desconhecido'),
             dueDate: dateStr,
-            value: parseFloat(row[2]) || 0,
+            value: Number(row[2]) || 0,
             nature: (row[3] || 'Outros') as ExpenseNature,
             costType: 'Variável',
             status: (row[4] || 'Pendente') as ExpenseStatus
           });
         });
       }
-      setSuccess(`${preview.length} registros sincronizados!`);
+      setSuccess(`${preview.length} registros sincronizados com segurança!`);
       setPreview([]);
       onSuccess();
     } catch (err) {
-      setError("Erro na gravação dos dados.");
+      setError("Erro na gravação dos dados. Algumas linhas podem estar malformadas.");
     }
   };
 
@@ -114,7 +118,6 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Painel de Importação Individual */}
         <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm space-y-6">
           <div className="flex flex-col gap-4">
             <div>
@@ -160,7 +163,6 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
           )}
         </div>
 
-        {/* Painel de Exportação Individual */}
         <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm space-y-6">
           <div className="flex items-center gap-3">
             <div className="p-3 bg-slate-100 rounded-2xl text-slate-500">
@@ -199,13 +201,12 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
           <div className="p-5 bg-blue-50 rounded-2xl border border-blue-100 flex gap-4">
              <AlertCircle className="text-blue-500 shrink-0" size={20}/>
              <p className="text-[9px] font-bold text-blue-700 uppercase leading-relaxed">
-               As funções acima exportam tabelas individuais. Para salvar o sistema completo (incluindo fornecedores e configurações), utilize o <b>Backup Consolidado</b> na barra lateral esquerda.
+               As funções acima exportam tabelas individuais. Para salvar o sistema completo, utilize o <b>Exportar</b> na barra lateral esquerda.
              </p>
           </div>
         </div>
       </div>
 
-      {/* Mensagens de Feedback */}
       {(error || success) && (
         <div className={`p-4 border rounded-xl flex items-center gap-3 animate-in fade-in zoom-in-95 ${error ? 'bg-red-50 border-red-100 text-red-600' : 'bg-green-50 border-green-100 text-green-600'}`}>
           {error ? <AlertCircle size={20}/> : <CheckCircle2 size={20}/>}
@@ -214,7 +215,6 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         </div>
       )}
 
-      {/* Área Crítica */}
       <div className="mt-4 border-t border-slate-200 pt-8">
         <div className="p-8 bg-red-50/50 border border-red-100 rounded-[2.5rem] flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="flex items-center gap-5">
@@ -240,7 +240,6 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   );
 };
 
-// Componente auxiliar interno para a seta
 const ChevronRight = ({ className, size }: { className?: string, size?: number }) => (
   <svg className={className} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>
 );

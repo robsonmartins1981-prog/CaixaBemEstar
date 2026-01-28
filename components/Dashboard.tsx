@@ -34,9 +34,10 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     
     const netBalance = totalIn - totalTaxas - totalOutPaid;
 
-    // Cálculos de Médias
+    // Cálculos de Médias (Reforçados contra divisão por zero)
     const uniqueDays = new Set(filteredEntries.map(e => e.date)).size;
     const totalShifts = filteredEntries.length;
+    
     const dailyAverage = totalIn / (uniqueDays || 1);
     const shiftAverage = totalIn / (totalShifts || 1);
 
@@ -200,7 +201,6 @@ const IndicatorCard = ({ title, value, sub, icon, color, iconBg, valColor }: any
       </p>
     </div>
 
-    {/* Sutil background decoration */}
     <div className={`absolute -bottom-6 -right-6 w-16 h-16 rounded-full opacity-[0.03] ${iconBg}`}></div>
   </div>
 );

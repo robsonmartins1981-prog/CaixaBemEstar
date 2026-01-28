@@ -34,8 +34,12 @@ export const db = {
   },
 
   getCardRates: (): CardRates => {
-    const data = localStorage.getItem(KEYS.RATES);
-    return data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
+    try {
+      const data = localStorage.getItem(KEYS.RATES);
+      return data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
+    } catch (e) {
+      return { debit: 0.8, credit: 2.8 };
+    }
   },
 
   saveCardRates: (rates: CardRates) => {
@@ -45,8 +49,10 @@ export const db = {
   getEntries: (): CashEntry[] => {
     try {
       const data = localStorage.getItem(KEYS.ENTRIES);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
+      console.error("Erro ao ler entradas de caixa:", e);
       return [];
     }
   },
@@ -61,18 +67,36 @@ export const db = {
 
   upsertEntry: (entry: Omit<CashEntry, 'id' | 'code'>) => {
     const entries = db.getEntries();
-    const existingIndex = entries.findIndex(e => e.date === entry.date && e.shift === entry.shift);
+    // Sanitização de valores para evitar NaN
+    const sanitizedEntry = {
+      ...entry,
+      cash: Number(entry.cash) || 0,
+      pix: Number(entry.pix) || 0,
+      credit: Number(entry.credit) || 0,
+      debit: Number(entry.debit) || 0,
+      sangria: Number(entry.sangria) || 0
+    };
+
+    const existingIndex = entries.findIndex(e => e.date === sanitizedEntry.date && e.shift === sanitizedEntry.shift);
     if (existingIndex !== -1) {
-      entries[existingIndex] = { ...entries[existingIndex], ...entry, sangria: entry.sangria || 0 };
+      entries[existingIndex] = { ...entries[existingIndex], ...sanitizedEntry };
     } else {
-      entries.push({ ...entry, id: generateId(), code: db.getNextCode(), sangria: entry.sangria || 0 });
+      entries.push({ ...sanitizedEntry, id: generateId(), code: db.getNextCode() });
     }
     localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
   saveEntry: (entry: Omit<CashEntry, 'code'>) => {
     const entries = db.getEntries();
-    entries.push({ ...entry, sangria: entry.sangria || 0, code: db.getNextCode() });
+    const sanitizedEntry = {
+      ...entry,
+      cash: Number(entry.cash) || 0,
+      pix: Number(entry.pix) || 0,
+      credit: Number(entry.credit) || 0,
+      debit: Number(entry.debit) || 0,
+      sangria: Number(entry.sangria) || 0
+    };
+    entries.push({ ...sanitizedEntry, code: db.getNextCode() });
     localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
@@ -80,7 +104,15 @@ export const db = {
     const entries = db.getEntries();
     const index = entries.findIndex(e => e.id === id);
     if (index !== -1) {
-      entries[index] = { ...entries[index], ...updatedEntry, sangria: updatedEntry.sangria || 0 };
+      entries[index] = { 
+        ...entries[index], 
+        ...updatedEntry, 
+        cash: Number(updatedEntry.cash) || 0,
+        pix: Number(updatedEntry.pix) || 0,
+        credit: Number(updatedEntry.credit) || 0,
+        debit: Number(updatedEntry.debit) || 0,
+        sangria: Number(updatedEntry.sangria) || 0
+      };
       localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
     }
   },
@@ -88,7 +120,8 @@ export const db = {
   getExpenses: (): Expense[] => {
     try {
       const data = localStorage.getItem(KEYS.EXPENSES);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
       return [];
     }
@@ -96,18 +129,25 @@ export const db = {
 
   upsertExpense: (expense: Omit<Expense, 'id'>) => {
     const expenses = db.getExpenses();
-    const existingIndex = expenses.findIndex(e => e.description === expense.description && e.dueDate === expense.dueDate && Math.abs(e.value - expense.value) < 0.01);
+    const sanitizedValue = Number(expense.value) || 0;
+    
+    const existingIndex = expenses.findIndex(e => 
+      e.description === expense.description && 
+      e.dueDate === expense.dueDate && 
+      Math.abs(e.value - sanitizedValue) < 0.01
+    );
+
     if (existingIndex !== -1) {
-      expenses[existingIndex] = { ...expenses[existingIndex], ...expense };
+      expenses[existingIndex] = { ...expenses[existingIndex], ...expense, value: sanitizedValue };
     } else {
-      expenses.push({ ...expense, id: generateId() });
+      expenses.push({ ...expense, id: generateId(), value: sanitizedValue });
     }
     localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
   },
 
   saveExpense: (expense: Omit<Expense, 'id'>) => {
     const expenses = db.getExpenses();
-    expenses.push({ ...expense, id: generateId() });
+    expenses.push({ ...expense, id: generateId(), value: Number(expense.value) || 0 });
     localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
   },
 
@@ -115,7 +155,7 @@ export const db = {
     const expenses = db.getExpenses();
     const index = expenses.findIndex(e => e.id === id);
     if (index !== -1) {
-      expenses[index] = { ...expenses[index], ...updatedExpense };
+      expenses[index] = { ...expenses[index], ...updatedExpense, value: Number(updatedExpense.value) || 0 };
       localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
     }
   },
@@ -142,7 +182,8 @@ export const db = {
   getSuppliers: (): Supplier[] => {
     try {
       const data = localStorage.getItem(KEYS.SUPPLIERS);
-      return data ? JSON.parse(data) : [];
+      const parsed = data ? JSON.parse(data) : [];
+      return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
       return [];
     }
@@ -170,7 +211,7 @@ export const db = {
 
   getFullBackup: () => {
     return {
-      version: '4.0',
+      version: '4.1',
       machineId: getMachineId(),
       timestamp: new Date().toISOString(),
       data: {
@@ -184,15 +225,31 @@ export const db = {
 
   restoreFullBackup: (backupObj: any) => {
     try {
-      if (!backupObj || !backupObj.data) return false;
+      // Validação Profunda de Esquema
+      if (!backupObj || typeof backupObj !== 'object' || !backupObj.data) {
+        throw new Error("Formato de backup inválido.");
+      }
+      
       const { entries, expenses, suppliers, rates } = backupObj.data;
+      
+      // Valida se as chaves principais são arrays
+      if (!Array.isArray(entries) || !Array.isArray(expenses) || !Array.isArray(suppliers)) {
+        throw new Error("Estrutura de dados corrompida.");
+      }
+
       db.createRestorePoint();
-      localStorage.setItem(KEYS.ENTRIES, JSON.stringify(Array.isArray(entries) ? entries : []));
-      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(Array.isArray(expenses) ? expenses : []));
-      localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(Array.isArray(suppliers) ? suppliers : []));
-      if (rates) localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
+      
+      localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
+      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+      localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+      
+      if (rates && typeof rates === 'object') {
+        localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
+      }
+      
       return true;
     } catch (e) {
+      console.error("Falha ao restaurar backup:", e);
       return false;
     }
   },
