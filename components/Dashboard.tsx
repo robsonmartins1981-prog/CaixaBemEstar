@@ -4,8 +4,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   Cell
 } from 'recharts';
-import { CashEntry, Expense } from '../types';
-import { db } from '../services/db';
+import { CashEntry, Expense } from '../types.ts';
+import { db } from '../services/db.ts';
 
 interface DashboardProps {
   entries: CashEntry[];
@@ -34,7 +34,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     
     const netBalance = totalIn - totalTaxas - totalOutPaid;
 
-    // Cálculos de Médias (Reforçados contra divisão por zero)
     const uniqueDays = new Set(filteredEntries.map(e => e.date)).size;
     const totalShifts = filteredEntries.length;
     
@@ -74,7 +73,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
 
   return (
     <div className="flex-1 flex flex-col gap-5 overflow-hidden h-full no-print pb-6">
-      {/* Barra de Filtro Superior */}
       <div className="bg-white border border-slate-200 p-4 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 shadow-sm rounded-2xl">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex items-center justify-center text-xl shadow-inner">📅</div>
@@ -92,7 +90,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         </div>
       </div>
 
-      {/* Grid de KPIs Expandido */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 shrink-0">
         <IndicatorCard 
           title="Faturamento Bruto" 
@@ -150,7 +147,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         />
       </div>
 
-      {/* Gráfico de Desempenho Diário */}
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col rounded-[2.5rem] overflow-hidden min-h-[300px]">
         <div className="p-6 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
           <div className="flex items-center gap-3">

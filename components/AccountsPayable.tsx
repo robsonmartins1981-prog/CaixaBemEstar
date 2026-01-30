@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Expense, ExpenseNature, CostType, Supplier } from '../types';
-import { db } from '../services/db';
-import { NATURES, COST_TYPES } from '../constants';
+import { Expense, ExpenseNature, CostType, Supplier } from '../types.ts';
+import { db } from '../services/db.ts';
+import { NATURES, COST_TYPES } from '../constants.tsx';
 import { 
   Plus, Trash2, Receipt, List, CheckCircle, Clock, 
   Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, AlertTriangle, ArrowUpDown, ChevronUp, Repeat,
   CalendarDays
 } from 'lucide-react';
-import ConfirmationModal from './ConfirmationModal';
+import ConfirmationModal from './ConfirmationModal.tsx';
 
 interface AccountsPayableProps {
   onSuccess: () => void;
@@ -32,7 +32,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dueDate', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Estados para Parcelamento
   const [isInstallment, setIsInstallment] = useState(false);
   const [installmentsCount, setInstallmentsCount] = useState(2);
   const [intervalDays, setIntervalDays] = useState(30);
@@ -219,7 +218,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         message="Deseja remover este compromisso financeiro permanentemente?"
       />
 
-      {/* HEADER RESUMO */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
         <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
@@ -248,7 +246,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         </button>
       </div>
 
-      {/* FORMULÁRIO */}
       {showForm && (
         <div className="bg-white border border-slate-200 shadow-xl rounded-2xl overflow-visible animate-in slide-in-from-top-4 duration-300 shrink-0">
           <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
@@ -352,7 +349,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         </div>
       )}
 
-      {/* FILTROS E PESQUISA */}
       <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col xl:flex-row items-center justify-between gap-4 shadow-sm shrink-0">
         <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto overflow-x-auto no-scrollbar">
           {(['Todos', 'Agendadas', 'Pagas', 'Vencidas', 'Vencendo (7 dias)'] as FilterStatus[]).map(s => (
@@ -379,7 +375,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         </div>
       </div>
 
-      {/* LISTAGEM */}
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
         <div className="flex-1 overflow-auto custom-scrollbar">
           <table className="w-full border-collapse min-w-[800px]">

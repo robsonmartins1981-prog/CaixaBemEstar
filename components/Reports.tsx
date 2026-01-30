@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState } from 'react';
-import { CashEntry, Expense, CardRates, ExpenseNature } from '../types';
-import { db } from '../services/db';
-import { NATURES } from '../constants';
+import { CashEntry, Expense, CardRates, ExpenseNature } from '../types.ts';
+import { db } from '../services/db.ts';
+import { NATURES } from '../constants.tsx';
 import { 
   ChevronLeft, ChevronRight, PieChart, ClipboardList, TrendingUp, FileDown, 
   ArrowUpRight, Info, LineChart as LineChartIcon, BarChart3, Filter, CheckCircle2, Circle
@@ -91,7 +91,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const periodEntries = entries.filter(e => filterFn(e.date));
     const periodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate));
 
-    // Filtro por Natureza (Para visualização de auditoria)
     const filteredAuditItems = periodExpenses.filter(e => selectedNatures.includes(e.nature));
 
     const faturamento = {
@@ -111,7 +110,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const despesasVariaveisOutras = periodExpenses.filter(e => e.costType === 'Variável' && e.nature !== 'Custo da Mercadoria Vendida (CMV)' && e.nature !== 'Impostos').reduce((acc, e) => acc + e.value, 0);
     const lucroLiquido = lucroBruto - despesasFixas - despesasVariaveisOutras;
 
-    // Cálculo de Tendência de 12 Meses
     const historyTrend = [];
     const trendEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
     for (let i = 11; i >= 0; i--) {
@@ -133,7 +131,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       });
     }
 
-    // Composição dos Gastos (Bar Chart)
     const compositionMap: Record<string, number> = {};
     let totalSpent = 0;
     filteredAuditItems.forEach(exp => {
@@ -194,7 +191,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
   return (
     <div className="flex-1 flex flex-col gap-4 overflow-hidden h-full print:block print:bg-white bg-[#F8FAFC]">
-      {/* Barra de Filtros */}
       <div className="bg-white border-b border-slate-200 p-3 flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0 no-print z-20 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
@@ -312,7 +308,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
           </div>
         ) : (
           <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             {/* Filtros de Natureza */}
              <div className="bg-white border border-slate-200 p-6 rounded-[2rem] shadow-sm space-y-4">
                 <div className="flex items-center gap-2">
                   <Filter size={14} className="text-slate-400"/>
@@ -336,7 +331,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
                 </div>
              </div>
 
-             {/* Gráfico de Composição (Barras) */}
              <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-xl">
                 <div className="flex items-center gap-4 mb-8">
                   <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
@@ -374,7 +368,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
                 </div>
              </div>
 
-             {/* Tabela de Auditoria Detalhada */}
              <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xl">
                 <div className="p-6 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50">
                   <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg">
@@ -433,7 +426,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   );
 };
 
-// COMPONENTES COM FONTES AUMENTADAS
 const DRETitle = ({ label, value }: { label: string, value: number }) => (
   <div className="flex justify-between items-end pt-6 pb-2 border-b-2 border-slate-900 print:pt-4 print:pb-1">
     <span className="text-[13px] md:text-[14px] font-black text-slate-900 uppercase tracking-widest">{label}</span>

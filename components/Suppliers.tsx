@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo } from 'react';
-import { Supplier, Expense } from '../types';
-import { db } from '../services/db';
-import { NATURES } from '../constants';
+import { Supplier, Expense } from '../types.ts';
+import { db } from '../services/db.ts';
+import { NATURES } from '../constants.tsx';
 import { Plus, Trash2, UserPlus, List, Search, ArrowUpDown, ChevronUp, ChevronDown, Edit2, X, Phone, Mail, User } from 'lucide-react';
-import ConfirmationModal from './ConfirmationModal';
+import ConfirmationModal from './ConfirmationModal.tsx';
 
 interface SuppliersProps {
   onSuccess: () => void;
@@ -59,14 +59,13 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
   const confirmDelete = () => {
     if (!deletingSupplier) return;
     
-    // Regra de Negócio: Verificar se existem contas a pagar para este fornecedor
     const expenses = db.getExpenses();
     const hasExpenses = expenses.some(exp => exp.supplier.toLowerCase() === deletingSupplier.name.toLowerCase());
     
     if (hasExpenses) {
       setErrorModal({
         title: "Bloqueio de Segurança",
-        message: `Não é possível excluir o fornecedor "${deletingSupplier.name}" pois existem títulos (pagos ou pendentes) vinculados a ele no Contas a Pagar.`
+        message: `Não é possível excluir o fornecedor "${deletingSupplier.name}" pois existem títulos vinculados a ele.`
       });
       setDeletingSupplier(null);
       return;
@@ -77,7 +76,6 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
     setDeletingSupplier(null);
   };
 
-  // Fix: Implemented handleSort function to resolve the "Cannot find name 'handleSort'" error.
   const handleSort = (key: keyof Supplier) => {
     let direction: 'asc' | 'desc' = 'asc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
@@ -117,7 +115,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
         onClose={() => setDeletingSupplier(null)}
         onConfirm={confirmDelete}
         title="Excluir Fornecedor"
-        message={`Confirma a exclusão de "${deletingSupplier?.name}"? Esta ação removerá os dados de contato permanentemente.`}
+        message={`Confirma a exclusão de "${deletingSupplier?.name}"?`}
       />
 
       <ConfirmationModal 
@@ -128,7 +126,6 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
         message={errorModal?.message || ""}
       />
 
-      {/* FORMULÁRIO COMPACTO LATERAL */}
       <div className="w-full lg:w-[380px] bg-white border border-slate-200 shadow-sm flex flex-col shrink-0 rounded-2xl overflow-hidden">
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -213,20 +210,10 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
               {editingId ? <Edit2 size={16}/> : <Plus size={16}/>} 
               {editingId ? 'Salvar Alterações' : 'Salvar Fornecedor'}
             </button>
-            {editingId && (
-              <button 
-                type="button"
-                onClick={resetForm}
-                className="w-full h-10 bg-slate-100 text-slate-500 font-black uppercase tracking-widest text-[9px] rounded-xl hover:bg-slate-200 transition-all"
-              >
-                Cancelar Edição
-              </button>
-            )}
           </div>
         </form>
       </div>
 
-      {/* LISTAGEM AMPLA */}
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
         <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
@@ -275,7 +262,6 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
                     {s.contactName && <div className="text-[10px] font-bold text-slate-600 flex items-center gap-1.5"><User size={10}/> {s.contactName}</div>}
                     {s.contactPhone && <div className="text-[9px] font-medium text-slate-400 flex items-center gap-1.5"><Phone size={10}/> {s.contactPhone}</div>}
                     {s.contactEmail && <div className="text-[9px] font-medium text-slate-400 flex items-center gap-1.5"><Mail size={10}/> {s.contactEmail}</div>}
-                    {!s.contactName && !s.contactPhone && !s.contactEmail && <span className="text-[9px] text-slate-300 italic">Sem contatos</span>}
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-[9px] font-black px-3 py-1 bg-white border border-slate-100 text-slate-500 rounded-full uppercase shadow-sm">
@@ -287,14 +273,12 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
                       <button 
                         onClick={() => handleEdit(s)}
                         className="p-2 text-slate-300 hover:text-orange-500 hover:bg-orange-50 rounded-xl transition-all"
-                        title="Editar Fornecedor"
                       >
                         <Edit2 size={16}/>
                       </button>
                       <button 
                         onClick={() => setDeletingSupplier(s)}
                         className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
-                        title="Excluir Fornecedor"
                       >
                         <Trash2 size={16}/>
                       </button>
@@ -302,13 +286,6 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
                   </td>
                 </tr>
               ))}
-              {filteredAndSortedSuppliers.length === 0 && (
-                <tr>
-                  <td colSpan={4} className="px-6 py-20 text-center text-slate-400 text-[10px] font-black uppercase italic tracking-widest">
-                    Nenhum fornecedor cadastrado ou encontrado
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>

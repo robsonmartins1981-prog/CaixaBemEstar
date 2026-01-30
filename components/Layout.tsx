@@ -1,13 +1,13 @@
 
 import React, { useState } from 'react';
-import { ICONS } from '../constants';
+import { ICONS } from '../constants.tsx';
 import { 
   Menu, LayoutGrid, Calculator, FileUp, Users, 
   HardDriveDownload, FileUp as FileUpIcon, Database, 
   CheckCircle2, AlertCircle, Shield
 } from 'lucide-react';
-import { db } from '../services/db';
-import ConfirmationModal from './ConfirmationModal';
+import { db } from '../services/db.ts';
+import ConfirmationModal from './ConfirmationModal.tsx';
 
 interface LayoutProps {
   children: React.ReactNode;

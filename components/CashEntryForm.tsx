@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { CashEntry, ShiftType } from '../types';
-import { db } from '../services/db';
-import { SHIFTS } from '../constants';
+import { CashEntry, ShiftType } from '../types.ts';
+import { db } from '../services/db.ts';
+import { SHIFTS } from '../constants.tsx';
 import { Save, Calculator, History, ChevronRight, Eye, X, ReceiptText, ArrowDownCircle } from 'lucide-react';
-import ConfirmationModal from './ConfirmationModal';
+import ConfirmationModal from './ConfirmationModal.tsx';
 
 interface CashEntryFormProps {
   onSuccess: () => void;
