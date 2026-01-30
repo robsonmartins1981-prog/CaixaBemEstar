@@ -1,5 +1,5 @@
 
-import { CashEntry, Expense, CardRates, Supplier } from '../types';
+import { CashEntry, Expense, CardRates, Supplier } from '../types.ts';
 
 const KEYS = {
   ENTRIES: 'fm_cash_entries',
@@ -9,13 +9,30 @@ const KEYS = {
   RESTORE_POINT: 'fm_auto_restore_point'
 };
 
-const getMachineId = () => {
-  let id = localStorage.getItem('fm_machine_id');
-  if (!id) {
-    id = 'BE-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    localStorage.setItem('fm_machine_id', id);
+const safeSetItem = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e) {
+    if (e instanceof DOMException && (e.code === 22 || e.code === 1014 || e.name === 'QuotaExceededError')) {
+      alert("⚠️ O limite de armazenamento do navegador foi atingido! Por favor, exporte um backup e limpe os dados antigos.");
+    }
+    console.error(`[DB Error] Falha ao gravar no LocalStorage (${key}):`, e);
+    return false;
   }
-  return id;
+};
+
+const getMachineId = () => {
+  try {
+    let id = localStorage.getItem('fm_machine_id');
+    if (!id) {
+      id = 'BE-' + Math.random().toString(36).substring(2, 11).toUpperCase();
+      safeSetItem('fm_machine_id', id);
+    }
+    return id;
+  } catch (e) {
+    return 'OFFLINE-CLIENT';
+  }
 };
 
 const generateId = () => {
@@ -25,34 +42,65 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
+const sanitizeNumber = (val: any): number => {
+  if (typeof val === 'number') return isFinite(val) ? val : 0;
+  if (!val) return 0;
+  const s = String(val)
+    .replace('R$', '')
+    .replace(/\s/g, '')
+    .replace(/\./g, '')
+    .replace(',', '.')
+    .trim();
+  const n = parseFloat(s);
+  return isFinite(n) ? n : 0;
+};
+
 export const db = {
   generateId,
   
   createRestorePoint() {
-    const data = db.getFullBackup();
-    localStorage.setItem(KEYS.RESTORE_POINT, JSON.stringify(data));
+    try {
+      const data = db.getFullBackup();
+      safeSetItem(KEYS.RESTORE_POINT, JSON.stringify(data));
+    } catch (e) {
+      console.warn("Falha ao criar ponto de restauração automático.", e);
+    }
   },
 
   getCardRates: (): CardRates => {
     try {
       const data = localStorage.getItem(KEYS.RATES);
-      return data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
+      const parsed = data ? JSON.parse(data) : { debit: 0.8, credit: 2.8 };
+      return {
+        debit: sanitizeNumber(parsed.debit) || 0.8,
+        credit: sanitizeNumber(parsed.credit) || 2.8
+      };
     } catch (e) {
       return { debit: 0.8, credit: 2.8 };
     }
   },
 
   saveCardRates: (rates: CardRates) => {
-    localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
+    safeSetItem(KEYS.RATES, JSON.stringify({
+      debit: sanitizeNumber(rates.debit),
+      credit: sanitizeNumber(rates.credit)
+    }));
   },
 
   getEntries: (): CashEntry[] => {
     try {
       const data = localStorage.getItem(KEYS.ENTRIES);
       const parsed = data ? JSON.parse(data) : [];
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map(e => ({
+        ...e,
+        cash: sanitizeNumber(e.cash),
+        pix: sanitizeNumber(e.pix),
+        credit: sanitizeNumber(e.credit),
+        debit: sanitizeNumber(e.debit),
+        sangria: sanitizeNumber(e.sangria)
+      }));
     } catch (e) {
-      console.error("Erro ao ler entradas de caixa:", e);
       return [];
     }
   },
@@ -67,14 +115,13 @@ export const db = {
 
   upsertEntry: (entry: Omit<CashEntry, 'id' | 'code'>) => {
     const entries = db.getEntries();
-    // Sanitização de valores para evitar NaN
     const sanitizedEntry = {
       ...entry,
-      cash: Number(entry.cash) || 0,
-      pix: Number(entry.pix) || 0,
-      credit: Number(entry.credit) || 0,
-      debit: Number(entry.debit) || 0,
-      sangria: Number(entry.sangria) || 0
+      cash: sanitizeNumber(entry.cash),
+      pix: sanitizeNumber(entry.pix),
+      credit: sanitizeNumber(entry.credit),
+      debit: sanitizeNumber(entry.debit),
+      sangria: sanitizeNumber(entry.sangria)
     };
 
     const existingIndex = entries.findIndex(e => e.date === sanitizedEntry.date && e.shift === sanitizedEntry.shift);
@@ -83,21 +130,21 @@ export const db = {
     } else {
       entries.push({ ...sanitizedEntry, id: generateId(), code: db.getNextCode() });
     }
-    localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
+    safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
   saveEntry: (entry: Omit<CashEntry, 'code'>) => {
     const entries = db.getEntries();
     const sanitizedEntry = {
       ...entry,
-      cash: Number(entry.cash) || 0,
-      pix: Number(entry.pix) || 0,
-      credit: Number(entry.credit) || 0,
-      debit: Number(entry.debit) || 0,
-      sangria: Number(entry.sangria) || 0
+      cash: sanitizeNumber(entry.cash),
+      pix: sanitizeNumber(entry.pix),
+      credit: sanitizeNumber(entry.credit),
+      debit: sanitizeNumber(entry.debit),
+      sangria: sanitizeNumber(entry.sangria)
     };
     entries.push({ ...sanitizedEntry, code: db.getNextCode() });
-    localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
+    safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
   updateEntry: (id: string, updatedEntry: Omit<CashEntry, 'id' | 'code'>) => {
@@ -107,13 +154,13 @@ export const db = {
       entries[index] = { 
         ...entries[index], 
         ...updatedEntry, 
-        cash: Number(updatedEntry.cash) || 0,
-        pix: Number(updatedEntry.pix) || 0,
-        credit: Number(updatedEntry.credit) || 0,
-        debit: Number(updatedEntry.debit) || 0,
-        sangria: Number(updatedEntry.sangria) || 0
+        cash: sanitizeNumber(updatedEntry.cash),
+        pix: sanitizeNumber(updatedEntry.pix),
+        credit: sanitizeNumber(updatedEntry.credit),
+        debit: sanitizeNumber(updatedEntry.debit),
+        sangria: sanitizeNumber(updatedEntry.sangria)
       };
-      localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
+      safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
     }
   },
 
@@ -121,7 +168,11 @@ export const db = {
     try {
       const data = localStorage.getItem(KEYS.EXPENSES);
       const parsed = data ? JSON.parse(data) : [];
-      return Array.isArray(parsed) ? parsed : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map(e => ({
+        ...e,
+        value: sanitizeNumber(e.value)
+      }));
     } catch (e) {
       return [];
     }
@@ -129,7 +180,7 @@ export const db = {
 
   upsertExpense: (expense: Omit<Expense, 'id'>) => {
     const expenses = db.getExpenses();
-    const sanitizedValue = Number(expense.value) || 0;
+    const sanitizedValue = sanitizeNumber(expense.value);
     
     const existingIndex = expenses.findIndex(e => 
       e.description === expense.description && 
@@ -142,21 +193,21 @@ export const db = {
     } else {
       expenses.push({ ...expense, id: generateId(), value: sanitizedValue });
     }
-    localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+    safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
   },
 
   saveExpense: (expense: Omit<Expense, 'id'>) => {
     const expenses = db.getExpenses();
-    expenses.push({ ...expense, id: generateId(), value: Number(expense.value) || 0 });
-    localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+    expenses.push({ ...expense, id: generateId(), value: sanitizeNumber(expense.value) });
+    safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
   },
 
   updateExpense: (id: string, updatedExpense: Omit<Expense, 'id'>) => {
     const expenses = db.getExpenses();
     const index = expenses.findIndex(e => e.id === id);
     if (index !== -1) {
-      expenses[index] = { ...expenses[index], ...updatedExpense, value: Number(updatedExpense.value) || 0 };
-      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+      expenses[index] = { ...expenses[index], ...updatedExpense, value: sanitizeNumber(updatedExpense.value) };
+      safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
     }
   },
 
@@ -165,18 +216,18 @@ export const db = {
     const index = expenses.findIndex(e => e.id === id);
     if (index !== -1) {
       expenses[index].status = status;
-      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+      safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
     }
   },
 
   deleteEntry: (id: string) => {
     const entries = db.getEntries().filter(e => e.id !== id);
-    localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
+    safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
 
   deleteExpense: (id: string) => {
     const expenses = db.getExpenses().filter(e => e.id !== id);
-    localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
+    safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
   },
 
   getSuppliers: (): Supplier[] => {
@@ -192,7 +243,7 @@ export const db = {
   saveSupplier: (supplier: Omit<Supplier, 'id'>) => {
     const suppliers = db.getSuppliers();
     suppliers.push({ ...supplier, id: generateId() });
-    localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+    safeSetItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
   },
 
   updateSupplier: (id: string, updatedSupplier: Omit<Supplier, 'id'>) => {
@@ -200,18 +251,18 @@ export const db = {
     const index = suppliers.findIndex(s => s.id === id);
     if (index !== -1) {
       suppliers[index] = { ...suppliers[index], ...updatedSupplier };
-      localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+      safeSetItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
     }
   },
 
   deleteSupplier: (id: string) => {
     const suppliers = db.getSuppliers().filter(s => s.id !== id);
-    localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+    safeSetItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
   },
 
   getFullBackup: () => {
     return {
-      version: '4.1',
+      version: '4.3',
       machineId: getMachineId(),
       timestamp: new Date().toISOString(),
       data: {
@@ -225,31 +276,29 @@ export const db = {
 
   restoreFullBackup: (backupObj: any) => {
     try {
-      // Validação Profunda de Esquema
       if (!backupObj || typeof backupObj !== 'object' || !backupObj.data) {
-        throw new Error("Formato de backup inválido.");
+        throw new Error("Backup inválido.");
       }
       
       const { entries, expenses, suppliers, rates } = backupObj.data;
-      
-      // Valida se as chaves principais são arrays
       if (!Array.isArray(entries) || !Array.isArray(expenses) || !Array.isArray(suppliers)) {
-        throw new Error("Estrutura de dados corrompida.");
+        throw new Error("Dados corrompidos.");
       }
 
       db.createRestorePoint();
       
-      localStorage.setItem(KEYS.ENTRIES, JSON.stringify(entries));
-      localStorage.setItem(KEYS.EXPENSES, JSON.stringify(expenses));
-      localStorage.setItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+      const success = 
+        safeSetItem(KEYS.ENTRIES, JSON.stringify(entries)) &&
+        safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses)) &&
+        safeSetItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
       
-      if (rates && typeof rates === 'object') {
-        localStorage.setItem(KEYS.RATES, JSON.stringify(rates));
+      if (success && rates) {
+        safeSetItem(KEYS.RATES, JSON.stringify(rates));
       }
       
-      return true;
+      return success;
     } catch (e) {
-      console.error("Falha ao restaurar backup:", e);
+      console.error("Restauração falhou:", e);
       return false;
     }
   },
@@ -262,21 +311,25 @@ export const db = {
   seedInitialData: (csvData: string) => {
     const entries = db.getEntries();
     if (entries.length > 0) return 0;
+    
     const lines = csvData.trim().split('\n');
-    const startIdx = lines[0].toLowerCase().includes('data') ? 1 : 0;
+    const delimiter = lines[0].includes(';') ? ';' : ',';
+    
     let importCount = 0;
-    for (let i = startIdx; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      const [date, shiftStr, cash, credit, debit, pix] = line.split(',');
-      const mappedShift = shiftStr.trim() === 'Manhã' ? 'CAIXA 01 (MANHÃ)' : 'CAIXA 02 (TARDE)';
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split(delimiter);
+      if (parts.length < 6) continue;
+      
+      const [date, shiftStr, cash, credit, debit, pix] = parts;
+      const mappedShift = String(shiftStr).includes('Tarde') ? 'CAIXA 02 (TARDE)' : 'CAIXA 01 (MANHÃ)';
+      
       db.upsertEntry({
         date: date.trim(),
         shift: mappedShift as any,
-        cash: parseFloat(cash) || 0,
-        credit: parseFloat(credit) || 0,
-        debit: parseFloat(debit) || 0,
-        pix: parseFloat(pix) || 0,
+        cash: sanitizeNumber(cash),
+        credit: sanitizeNumber(credit),
+        debit: sanitizeNumber(debit),
+        pix: sanitizeNumber(pix),
         sangria: 0
       });
       importCount++;

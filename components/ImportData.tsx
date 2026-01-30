@@ -1,15 +1,15 @@
 
 import React, { useState, useRef, useMemo } from 'react';
 import * as XLSX from 'https://esm.sh/xlsx';
-import { db } from '../services/db';
+import { db } from '../services/db.ts';
 import { 
   FileUp, CheckCircle2, AlertCircle, Loader2, Database, 
   Download, FileSpreadsheet, HardDriveDownload, AlertTriangle, X,
-  ShieldCheck, ShieldAlert, Info, Trash2
+  ShieldCheck, ShieldAlert, Trash2
 } from 'lucide-react';
-import { CashEntry, Expense, ExpenseNature, ExpenseStatus } from '../types';
-import ConfirmationModal from './ConfirmationModal';
-import { NATURES } from '../constants';
+import { CashEntry, Expense, ExpenseNature, ExpenseStatus } from '../types.ts';
+import ConfirmationModal from './ConfirmationModal.tsx';
+import { NATURES } from '../constants.tsx';
 
 interface ValidationResult {
   row: any;
@@ -28,72 +28,87 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Funções de utilidade para validação
   const parseDate = (val: any): string | null => {
     if (!val) return null;
-    if (val instanceof Date) return val.toISOString().split('T')[0];
+    if (val instanceof Date) {
+      if (isNaN(val.getTime())) return null;
+      return val.toISOString().split('T')[0];
+    }
     const s = String(val).trim();
-    // Tenta DD/MM/YYYY
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) {
       const [d, m, y] = s.split('/');
       return `${y}-${m}-${d}`;
     }
-    // Tenta YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
     return null;
   };
 
-  const parseNumber = (val: any): number => {
+  const sanitizeValue = (val: any): number => {
     if (typeof val === 'number') return isFinite(val) ? val : 0;
-    const s = String(val || '0')
+    if (!val) return 0;
+    const s = String(val)
       .replace('R$', '')
+      .replace(/\s/g, '')
       .replace(/\./g, '')
       .replace(',', '.')
       .trim();
     const n = parseFloat(s);
-    return isNaN(n) ? 0 : n;
+    return isFinite(n) ? n : 0;
   };
 
   const validateRow = (row: any[], type: 'caixa' | 'contas'): ValidationResult => {
     const errors: string[] = [];
     let processedData: any = {};
 
-    if (type === 'caixa') {
-      const date = parseDate(row[0]);
-      if (!date) errors.push("Data inválida ou ausente");
-      
-      const shift = String(row[1] || '').toUpperCase();
-      const validShift = shift.includes('CAIXA 01') ? 'CAIXA 01 (MANHÃ)' : 
-                         shift.includes('CAIXA 02') ? 'CAIXA 02 (TARDE)' : 
-                         shift.includes('CAIXA 03') ? 'CAIXA 03 (NOITE)' : 'CAIXA 01 (MANHÃ)';
+    try {
+      if (type === 'caixa') {
+        if (row.length < 2) {
+          errors.push("Linha incompleta");
+        } else {
+          const date = parseDate(row[0]);
+          if (!date) errors.push("Data inválida");
+          
+          const shiftRaw = String(row[1] || '').toUpperCase();
+          const validShift = shiftRaw.includes('CAIXA 01') || shiftRaw.includes('MANHÃ') ? 'CAIXA 01 (MANHÃ)' : 
+                             shiftRaw.includes('CAIXA 02') || shiftRaw.includes('TARDE') ? 'CAIXA 02 (TARDE)' : 
+                             shiftRaw.includes('CAIXA 03') || shiftRaw.includes('NOITE') ? 'CAIXA 03 (NOITE)' : 'CAIXA 01 (MANHÃ)';
 
-      processedData = {
-        date: date || '',
-        shift: validShift,
-        cash: parseNumber(row[2]),
-        pix: parseNumber(row[3]),
-        credit: parseNumber(row[4]),
-        debit: parseNumber(row[5]),
-        sangria: parseNumber(row[6])
-      };
-    } else {
-      const description = String(row[0] || '').trim();
-      if (!description) errors.push("Descrição obrigatória");
-      
-      const date = parseDate(row[1]);
-      if (!date) errors.push("Data de vencimento inválida");
+          processedData = {
+            date: date || '',
+            shift: validShift,
+            cash: sanitizeValue(row[2]),
+            pix: sanitizeValue(row[3]),
+            credit: sanitizeValue(row[4]),
+            debit: sanitizeValue(row[5]),
+            sangria: sanitizeValue(row[6])
+          };
+        }
+      } else {
+        if (row.length < 2) {
+          errors.push("Linha incompleta");
+        } else {
+          const description = String(row[0] || '').trim();
+          if (!description) errors.push("Descrição ausente");
+          
+          const date = parseDate(row[1]);
+          if (!date) errors.push("Vencimento inválido");
 
-      const nature = (NATURES as unknown as string[]).includes(String(row[3])) ? row[3] : 'Outros';
+          const natureCandidate = String(row[3] || '');
+          const nature = (NATURES as unknown as string[]).includes(natureCandidate) ? natureCandidate : 'Outros';
 
-      processedData = {
-        description,
-        supplier: String(row[0] || 'Desconhecido'),
-        dueDate: date || '',
-        value: parseNumber(row[2]),
-        nature: nature as ExpenseNature,
-        costType: 'Variável',
-        status: (String(row[4]).toLowerCase().includes('pag') ? 'Pago' : 'Pendente') as ExpenseStatus
-      };
+          processedData = {
+            description,
+            supplier: String(row[0] || 'Desconhecido'),
+            dueDate: date || '',
+            value: sanitizeValue(row[2]),
+            nature: nature as ExpenseNature,
+            costType: 'Variável',
+            status: (String(row[4] || '').toLowerCase().includes('pag') ? 'Pago' : 'Pendente') as ExpenseStatus
+          };
+        }
+      }
+    } catch (e) {
+      errors.push("Erro de processamento na linha");
     }
 
     return {
@@ -111,6 +126,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
     setLoading(true);
     setError(null);
     setSuccess(null);
+    setValidationResults([]);
 
     const reader = new FileReader();
     reader.onload = (evt) => {
@@ -121,15 +137,26 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         const ws = wb.Sheets[wsname];
         const data = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
         
-        const rows = data.slice(1).filter(r => r.length > 0 && r.some(cell => cell !== null && cell !== ''));
-        const results = rows.map(r => validateRow(r, importType));
+        if (data.length <= 1) {
+          setError("O arquivo selecionado parece estar vazio.");
+          setLoading(false);
+          return;
+        }
+
+        const results = data.slice(1)
+          .filter(r => r.length > 0 && r.some(cell => cell !== null && cell !== ''))
+          .map(r => validateRow(r, importType));
         
         setValidationResults(results);
       } catch (err) {
-        setError("Falha crítica ao ler o arquivo. Certifique-se de que não está protegido por senha.");
+        setError("Não foi possível ler este arquivo. Verifique se ele não está corrompido.");
       } finally {
         setLoading(false);
       }
+    };
+    reader.onerror = () => {
+      setError("Falha na leitura física do arquivo.");
+      setLoading(false);
     };
     reader.readAsBinaryString(file);
   };
@@ -137,43 +164,49 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   const executeImport = () => {
     const validData = validationResults.filter(r => r.isValid);
     if (validData.length === 0) {
-      setError("Nenhum dado válido encontrado para importação.");
+      setError("Nenhum dado válido foi encontrado para importar.");
       return;
     }
 
     try {
-      db.createRestorePoint(); // Backup de segurança antes de importar
+      db.createRestorePoint();
+      let count = 0;
       validData.forEach(res => {
         if (importType === 'caixa') {
           db.upsertEntry(res.data);
         } else {
           db.upsertExpense(res.data);
         }
+        count++;
       });
 
-      setSuccess(`Sucesso! ${validData.length} registros foram integrados ao sistema.`);
+      setSuccess(`Importação concluída: ${count} registros salvos com segurança.`);
       setValidationResults([]);
       onSuccess();
     } catch (err) {
-      setError("Erro durante a gravação no banco de dados. Operação abortada.");
+      setError("Ocorreu um erro ao gravar os dados no banco de dados.");
     }
   };
 
   const handleExportData = (type: 'caixa' | 'contas') => {
-    let headers: string[] = [];
-    let rows: any[][] = [];
-    if (type === 'caixa') {
-      headers = ["Data", "Caixa", "Dinheiro", "Pix", "Credito", "Debito", "Sangria"];
-      rows = db.getEntries().map(e => [e.date, e.shift, e.cash, e.pix, e.credit, e.debit, e.sangria]);
-    } else {
-      headers = ["Descricao", "Vencimento", "Valor", "Categoria", "Status"];
-      rows = db.getExpenses().map(e => [e.description, e.dueDate, e.value, e.nature, e.status]);
+    try {
+      let headers: string[] = [];
+      let rows: any[][] = [];
+      if (type === 'caixa') {
+        headers = ["Data", "Caixa", "Dinheiro", "Pix", "Credito", "Debito", "Sangria"];
+        rows = db.getEntries().map(e => [e.date, e.shift, e.cash, e.pix, e.credit, e.debit, e.sangria]);
+      } else {
+        headers = ["Descricao", "Vencimento", "Valor", "Categoria", "Status"];
+        rows = db.getExpenses().map(e => [e.description, e.dueDate, e.value, e.nature, e.status]);
+      }
+      
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Dados");
+      XLSX.writeFile(wb, `BEM_ESTAR_${type.toUpperCase()}_${new Date().toISOString().split('T')[0]}.xlsx`);
+    } catch (e) {
+      setError("Falha ao gerar a planilha de exportação.");
     }
-    
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Dados");
-    XLSX.writeFile(wb, `BEM_ESTAR_${type.toUpperCase()}_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
   const stats = useMemo(() => {
@@ -190,18 +223,17 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         onClose={() => setIsClearModalOpen(false)}
         onConfirm={() => { db.clearAllData(); window.location.reload(); }}
         title="Formatar Banco de Dados?"
-        message="Esta ação apagará absolutamente TODOS os registros salvos. Esta operação não pode ser desfeita."
+        message="CUIDADO: Isso apagará TODOS os seus lançamentos salvos. Exporte um backup antes!"
       />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 shrink-0">
-        {/* Bloco de Upload */}
         <div className="lg:col-span-2 bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                <FileSpreadsheet className="text-blue-500" size={24}/> Importação Inteligente
+                <FileSpreadsheet className="text-blue-500" size={24}/> Migração de Planilhas
               </h2>
-              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Validação de esquema em tempo real</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Sincronização robusta via Excel ou CSV</p>
             </div>
 
             <div className="flex bg-slate-100 p-1 rounded-xl">
@@ -226,45 +258,43 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
               <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 group-hover:text-blue-500 transition-all shadow-inner">
                 {loading ? <Loader2 size={24} className="animate-spin" /> : <FileUp size={24} />}
               </div>
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Solte seu arquivo aqui ou clique para buscar</p>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Clique aqui para selecionar o arquivo</p>
             </div>
           </label>
         </div>
 
-        {/* Bloco de Exportação Rápida */}
         <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm flex flex-col justify-between">
           <div>
             <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-              <HardDriveDownload className="text-emerald-500" size={24}/> Exportar Excel
+              <HardDriveDownload className="text-emerald-500" size={24}/> Exportação Modular
             </h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Backup por módulos individuais</p>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Extraia seus dados por categoria</p>
           </div>
           
           <div className="space-y-3 mt-6">
             <button onClick={() => handleExportData('caixa')} className="w-full flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all group">
-              <span className="text-[10px] font-black uppercase text-slate-600">Caixa Completo</span>
+              <span className="text-[10px] font-black uppercase text-slate-600">Planilha do Caixa</span>
               <Download size={16} className="text-slate-300 group-hover:text-emerald-500"/>
             </button>
             <button onClick={() => handleExportData('contas')} className="w-full flex items-center justify-between p-4 bg-slate-50 border border-slate-100 rounded-xl hover:bg-slate-100 transition-all group">
-              <span className="text-[10px] font-black uppercase text-slate-600">Contas a Pagar</span>
+              <span className="text-[10px] font-black uppercase text-slate-600">Planilha de Contas</span>
               <Download size={16} className="text-slate-300 group-hover:text-blue-500"/>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Área de Preview e Validação */}
       {validationResults.length > 0 && (
         <div className="flex-1 bg-white border border-slate-200 rounded-[2.5rem] shadow-xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-bottom-4">
           <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 bg-emerald-500 rounded-full"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600">{stats.valid} Válidos</span>
+                <span className="text-[10px] font-black uppercase text-slate-600 font-mono">{stats.valid} Prontos</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 bg-rose-500 rounded-full"></div>
-                <span className="text-[10px] font-black uppercase text-slate-600">{stats.invalid} Erros</span>
+                <span className="text-[10px] font-black uppercase text-slate-600 font-mono">{stats.invalid} Inválidos</span>
               </div>
             </div>
 
@@ -275,21 +305,21 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
                 disabled={stats.valid === 0}
                 className="px-8 py-2.5 bg-slate-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all shadow-lg disabled:opacity-30 flex items-center gap-2"
               >
-                <CheckCircle2 size={16}/> Confirmar Importação ({stats.valid})
+                <CheckCircle2 size={16}/> Confirmar Importação
               </button>
             </div>
           </div>
 
           <div className="flex-1 overflow-auto custom-scrollbar">
             <table className="w-full border-collapse">
-              <thead className="sticky top-0 bg-slate-100 z-10">
+              <thead className="sticky top-0 bg-slate-100 z-10 border-b">
                 <tr>
-                  <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase border-b">Status</th>
-                  <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase border-b">
+                  <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase">Integridade</th>
+                  <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase">
                     {importType === 'caixa' ? 'Data / Turno' : 'Descrição'}
                   </th>
-                  <th className="px-6 py-4 text-right text-[9px] font-black text-slate-500 uppercase border-b">Valor Principal</th>
-                  <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase border-b">Diagnóstico</th>
+                  <th className="px-6 py-4 text-right text-[9px] font-black text-slate-500 uppercase">Valor Captado</th>
+                  <th className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -304,7 +334,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
                     </td>
                     <td className="px-6 py-4">
                       <p className="text-[11px] font-black text-slate-800 uppercase">
-                        {importType === 'caixa' ? `${res.data.date} | ${res.data.shift.split(' ')[1]}` : res.data.description}
+                        {importType === 'caixa' ? `${res.data.date} | ${res.data.shift}` : res.data.description}
                       </p>
                     </td>
                     <td className="px-6 py-4 text-right font-mono font-black text-[11px] text-slate-900">
@@ -321,7 +351,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
                         </div>
                       ) : (
                         <span className="text-[8px] font-black uppercase text-emerald-600 flex items-center gap-1">
-                          <CheckCircle2 size={10}/> Pronto para salvar
+                          <CheckCircle2 size={10}/> Validado
                         </span>
                       )}
                     </td>
@@ -333,7 +363,6 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         </div>
       )}
 
-      {/* Alertas e Limpeza */}
       {!validationResults.length && (
         <div className="space-y-6 shrink-0 mt-auto">
           {(error || success) && (
@@ -343,7 +372,6 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
               </div>
               <div className="flex-1">
                 <p className="text-[11px] font-black uppercase tracking-widest">{error || success}</p>
-                <p className="text-[9px] font-bold opacity-70 uppercase">Informação do processador de dados</p>
               </div>
               <button onClick={() => {setError(null); setSuccess(null);}} className="p-2 opacity-50 hover:opacity-100"><X size={18}/></button>
             </div>
@@ -355,9 +383,9 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
                  <AlertTriangle size={32} className="text-yellow-500"/>
                </div>
                <div>
-                 <h3 className="text-lg font-black uppercase tracking-tight">Manutenção de Dados</h3>
+                 <h3 className="text-lg font-black uppercase tracking-tight">Zona de Manutenção</h3>
                  <p className="text-[10px] text-slate-400 font-bold uppercase leading-relaxed max-w-md">
-                   Utilize o botão de formatação caso precise limpar o sistema para uma nova migração. Recomendamos exportar o backup JSON completo antes.
+                   Utilize esta área para reiniciar seu banco de dados local. Recomendamos cautela extrema.
                  </p>
                </div>
             </div>
@@ -365,7 +393,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
               onClick={() => setIsClearModalOpen(true)}
               className="px-10 py-4 bg-rose-600 hover:bg-rose-700 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest transition-all shadow-xl shadow-rose-900/20 active:scale-95 flex items-center gap-2"
             >
-              <Trash2 size={18}/> Formatar Sistema
+              <Trash2 size={18}/> Formatar Tudo
             </button>
           </div>
         </div>
