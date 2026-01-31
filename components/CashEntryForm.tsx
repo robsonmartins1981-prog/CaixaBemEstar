@@ -3,7 +3,7 @@ import React, { useState, useMemo, useRef } from 'react';
 import { CashEntry, ShiftType } from '../types.ts';
 import { db } from '../services/db.ts';
 import { SHIFTS } from '../constants.tsx';
-import { Save, Calculator, History, ChevronRight, Eye, X, ReceiptText, ArrowDownCircle } from 'lucide-react';
+import { Save, Eye, X } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal.tsx';
 
 interface CashEntryFormProps {
@@ -14,69 +14,63 @@ interface CashEntryFormProps {
 const formatMoney = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type ListFilterType = 'DIA' | 'MES' | 'ANO' | 'CUSTOM';
-
 const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [detailEntry, setDetailEntry] = useState<CashEntry | null>(null);
-  const [filterType, setFilterType] = useState<ListFilterType>('MES');
-  const [customRange, setCustomRange] = useState({ start: '', end: '' });
+  const [filterType, setFilterType] = useState('MES');
 
-  const inputRefs = useRef<(HTMLInputElement | HTMLSelectElement | null)[]>([]);
+  // Referências para navegação por Enter
+  const dateRef = useRef<HTMLInputElement>(null);
+  const shiftRef = useRef<HTMLSelectElement>(null);
+  const cashRef = useRef<HTMLInputElement>(null);
+  const pixRef = useRef<HTMLInputElement>(null);
+  const creditRef = useRef<HTMLInputElement>(null);
+  const debitRef = useRef<HTMLInputElement>(null);
+  const sangriaRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<Omit<CashEntry, 'id' | 'code'>>({
     date: new Date().toISOString().split('T')[0],
     shift: 'CAIXA 01 (MANHÃ)',
-    cash: 0,
-    credit: 0,
-    debit: 0,
-    pix: 0,
-    sangria: 0,
+    cash: 0, credit: 0, debit: 0, pix: 0, sangria: 0,
   });
 
-  const filteredAndSortedEntries = useMemo(() => {
-    const now = new Date();
-    const todayStr = now.toISOString().split('T')[0];
-    const monthStr = todayStr.substring(0, 7);
-    const yearStr = todayStr.substring(0, 4);
+  const filteredEntries = useMemo(() => {
+    const monthStr = new Date().toISOString().substring(0, 7);
+    return entries
+      .filter(e => filterType === 'MES' ? e.date.startsWith(monthStr) : true)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [entries, filterType]);
 
-    const filtered = entries.filter(e => {
-      if (filterType === 'DIA') return e.date === todayStr;
-      if (filterType === 'MES') return e.date.startsWith(monthStr);
-      if (filterType === 'ANO') return e.date.startsWith(yearStr);
-      if (filterType === 'CUSTOM') {
-        if (!customRange.start || !customRange.end) return true;
-        return e.date >= customRange.start && e.date <= customRange.end;
-      }
-      return true;
-    });
-
-    const shiftOrder: Record<string, number> = { 'CAIXA 01 (MANHÃ)': 1, 'CAIXA 02 (TARDE)': 2, 'CAIXA 03 (NOITE)': 3 };
-    return [...filtered].sort((a, b) => {
-      if (a.date !== b.date) return b.date.localeCompare(a.date);
-      return (shiftOrder[a.shift] || 0) - (shiftOrder[b.shift] || 0);
-    });
-  }, [entries, filterType, customRange]);
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingId) {
-      db.updateEntry(editingId, { ...formData, sangria: formData.sangria || 0 });
-    } else {
-      db.saveEntry({ ...formData, id: db.generateId(), sangria: formData.sangria || 0 } as any);
+  const validateAndSave = () => {
+    if (!formData.date || !formData.shift) {
+      dateRef.current?.focus();
+      return;
     }
+    
+    if (editingId) db.updateEntry(editingId, formData);
+    else db.saveEntry({ ...formData, id: db.generateId() } as any);
+    
     onSuccess();
     setEditingId(null);
     setFormData({ ...formData, cash: 0, credit: 0, debit: 0, pix: 0, sangria: 0 });
-    inputRefs.current[0]?.focus();
+    dateRef.current?.focus();
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, index: number) => {
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    validateAndSave();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent, nextRef: React.RefObject<any> | null) => {
     if (e.key === 'Enter') {
-      if (index < 6) {
-        e.preventDefault();
-        inputRefs.current[index + 1]?.focus();
+      e.preventDefault();
+      
+      if (nextRef && nextRef.current) {
+        nextRef.current.focus();
+        if (nextRef.current.select) nextRef.current.select();
+      } else {
+        validateAndSave();
       }
     }
   };
@@ -85,193 +79,151 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
   const liquidoTotal = brutoTotal - (formData.sangria || 0);
 
   return (
-    <div className="flex-1 flex flex-col lg:flex-row gap-4 h-full overflow-hidden">
+    <div className="flex-1 flex flex-col lg:flex-row gap-3 h-full overflow-hidden">
       <ConfirmationModal 
         isOpen={!!deletingId}
         onClose={() => setDeletingId(null)}
         onConfirm={() => { db.deleteEntry(deletingId!); onSuccess(); setDeletingId(null); }}
-        title="Excluir Registro"
-        message="Confirma a remoção definitiva deste lançamento de caixa?"
+        title="Excluir Lançamento"
+        message="Deseja realmente remover este registro de caixa?"
       />
 
       {detailEntry && <DetailViewModal entry={detailEntry} onClose={() => setDetailEntry(null)} />}
 
-      <div className="lg:w-[420px] bg-white border border-slate-200 shadow-sm flex flex-col h-full shrink-0 rounded-2xl">
-        <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between rounded-t-2xl">
-          <div className="flex items-center gap-2">
-            <Calculator size={18} className="text-green-700"/>
-            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-800">Lançamento de Turno</h3>
-          </div>
-          {editingId && (
-            <button onClick={() => {setEditingId(null); setFormData({...formData, cash: 0, credit: 0, debit: 0, pix: 0, sangria: 0});}} className="text-[9px] font-black text-red-600 uppercase underline">Sair da Edição</button>
-          )}
+      <div className="lg:w-80 bg-white border border-slate-200 shadow-sm flex flex-col shrink-0 rounded-xl overflow-hidden">
+        <div className="p-3 bg-slate-50 border-b flex justify-between items-center">
+          <h3 className="text-[10px] font-black uppercase text-slate-700">Lançamento Diário</h3>
+          {editingId && <button onClick={() => setEditingId(null)} className="text-[8px] font-bold text-red-500 uppercase">Cancelar Edição</button>}
         </div>
 
-        <form onSubmit={handleSubmit} className="flex-1 p-5 flex flex-col gap-3 overflow-y-auto custom-scrollbar bg-slate-50/20">
-          <div className="grid grid-cols-2 gap-3 mb-2">
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-600 uppercase">Data do Movimento</label>
+        <form onSubmit={handleSubmit} className="flex-1 p-3 flex flex-col gap-2 overflow-y-auto custom-scrollbar">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-1">
+              <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Data</label>
               <input 
-                ref={el => { inputRefs.current[0] = el; }}
+                ref={dateRef}
                 type="date" 
-                className="w-full h-10 px-3 bg-white border border-slate-300 text-xs font-bold focus:border-green-500 outline-none rounded shadow-sm" 
+                className="h-9 px-2 bg-slate-50 border rounded-lg text-xs font-bold outline-none focus:border-blue-500" 
                 value={formData.date} 
-                onKeyDown={e => handleKeyDown(e, 0)}
                 onChange={e => setFormData({...formData, date: e.target.value})} 
+                onKeyDown={(e) => handleKeyDown(e, shiftRef)}
               />
             </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-slate-600 uppercase">Terminal/Turno</label>
+            <div className="flex flex-col gap-1">
+              <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Caixa</label>
               <select 
-                ref={el => { inputRefs.current[1] = el; }}
-                className="w-full h-10 px-3 bg-white border border-slate-300 text-[10px] font-black uppercase focus:border-green-500 outline-none rounded shadow-sm" 
+                ref={shiftRef}
+                className="h-9 px-2 bg-slate-50 border rounded-lg text-[10px] font-black uppercase outline-none focus:border-blue-500" 
                 value={formData.shift} 
-                onKeyDown={e => handleKeyDown(e, 1)}
                 onChange={e => setFormData({...formData, shift: e.target.value as ShiftType})}
+                onKeyDown={(e) => handleKeyDown(e, cashRef)}
               >
-                {SHIFTS.map(s => <option key={s} value={s}>{s}</option>)}
+                {SHIFTS.map(s => <option key={s} value={s}>{s.split(' ')[1]}</option>)}
               </select>
             </div>
           </div>
 
-          <div className="space-y-3">
-            <SpreadsheetInput 
-              inputRef={(el: HTMLInputElement | null) => { inputRefs.current[2] = el; }}
-              label="01. DINHEIRO (CÉDULAS)" 
+          <div className="space-y-2 mt-2">
+            <CompactInput 
+              inputRef={cashRef}
+              label="Dinheiro" 
               value={formData.cash} 
-              onKeyDown={(e: React.KeyboardEvent) => handleKeyDown(e, 2)}
               onChange={(v: number) => setFormData({...formData, cash: v})} 
-              color="green" 
+              color="border-l-green-600" 
+              onKeyDown={(e: any) => handleKeyDown(e, pixRef)}
             />
-            <SpreadsheetInput 
-              inputRef={(el: HTMLInputElement | null) => { inputRefs.current[3] = el; }}
-              label="02. TRANSFERÊNCIA PIX" 
+            <CompactInput 
+              inputRef={pixRef}
+              label="Pix" 
               value={formData.pix} 
-              onKeyDown={(e: React.KeyboardEvent) => handleKeyDown(e, 3)}
               onChange={(v: number) => setFormData({...formData, pix: v})} 
-              color="cyan" 
+              color="border-l-cyan-500" 
+              onKeyDown={(e: any) => handleKeyDown(e, creditRef)}
             />
-            <SpreadsheetInput 
-              inputRef={(el: HTMLInputElement | null) => { inputRefs.current[4] = el; }}
-              label="03. CARTÃO CRÉDITO" 
+            <CompactInput 
+              inputRef={creditRef}
+              label="Cartão Crédito" 
               value={formData.credit} 
-              onKeyDown={(e: React.KeyboardEvent) => handleKeyDown(e, 4)}
               onChange={(v: number) => setFormData({...formData, credit: v})} 
-              color="blue" 
+              color="border-l-blue-600" 
+              onKeyDown={(e: any) => handleKeyDown(e, debitRef)}
             />
-            <SpreadsheetInput 
-              inputRef={(el: HTMLInputElement | null) => { inputRefs.current[5] = el; }}
-              label="04. CARTÃO DÉBITO" 
+            <CompactInput 
+              inputRef={debitRef}
+              label="Cartão Débito" 
               value={formData.debit} 
-              onKeyDown={(e: React.KeyboardEvent) => handleKeyDown(e, 5)}
               onChange={(v: number) => setFormData({...formData, debit: v})} 
-              color="slate" 
+              color="border-l-blue-400" 
+              onKeyDown={(e: any) => handleKeyDown(e, sangriaRef)}
             />
-            <SpreadsheetInput 
-              inputRef={(el: HTMLInputElement | null) => { inputRefs.current[6] = el; }}
-              label="05. SANGRIA / RETIRADA" 
+            <CompactInput 
+              inputRef={sangriaRef}
+              label="Sangria (Saída de Caixa)" 
               value={formData.sangria} 
-              onKeyDown={(e: React.KeyboardEvent) => handleKeyDown(e, 6)}
               onChange={(v: number) => setFormData({...formData, sangria: v})} 
-              color="orange" 
+              color="border-l-orange-600" 
+              onKeyDown={(e: any) => handleKeyDown(e, null)}
             />
           </div>
 
-          <div className="mt-auto pt-4 border-t border-slate-200 flex flex-col gap-3">
-            <div className="flex justify-between items-center px-5 py-4 bg-slate-900 rounded-xl border border-slate-800">
-              <div className="flex flex-col">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Bruto: {formatMoney(brutoTotal)}</span>
-                <span className="text-[11px] font-black text-slate-100 uppercase tracking-tighter">Saldo Líquido</span>
-              </div>
-              <span className="text-xl font-black text-green-400 font-mono tracking-tighter">
-                {formatMoney(liquidoTotal)}
-              </span>
+          <div className="mt-auto pt-3 border-t">
+            <div className="flex justify-between items-center p-3 bg-slate-900 rounded-xl text-white mb-2 shadow-inner">
+               <span className="text-[9px] font-black uppercase tracking-widest text-slate-400">Total Líquido</span>
+               <span className="text-sm font-mono font-black text-green-400">{formatMoney(liquidoTotal)}</span>
             </div>
-            <button type="submit" className="w-full h-14 bg-green-600 hover:bg-green-700 text-white font-black uppercase tracking-widest text-[11px] transition-all flex items-center justify-center gap-3 rounded-xl active:scale-95 shadow-none">
-              <Save size={18}/> {editingId ? 'Salvar Edição' : 'Concluir Lançamento'}
+            <button type="submit" className="w-full h-10 bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-green-700 active:scale-95 transition-all shadow-lg shadow-green-900/10">
+              <Save size={16}/> {editingId ? 'Salvar Alteração' : 'Gravar Lançamento'}
             </button>
           </div>
         </form>
       </div>
 
-      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
-        <div className="p-3 bg-slate-50 border-b border-slate-200 flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4 shrink-0 rounded-t-2xl">
-          <div className="flex items-center gap-3 px-2">
-            <div className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 shadow-sm">
-              <History size={16}/>
-            </div>
-            <div>
-              <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-700">Auditagem de Lançamentos</h3>
-              <p className="text-[9px] font-bold text-slate-400 uppercase">Detalhamento multimodal</p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex bg-white border border-slate-200 p-1 rounded-lg shadow-sm">
-              {(['DIA', 'MES', 'ANO', 'CUSTOM'] as ListFilterType[]).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setFilterType(f)}
-                  className={`px-3 py-1.5 rounded text-[9px] font-black uppercase transition-all ${
-                    filterType === f ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400 hover:bg-slate-50'
-                  }`}
-                >
-                  {f === 'DIA' ? 'Hoje' : f === 'MES' ? 'Mês' : f === 'ANO' ? 'Ano' : 'Personalizado'}
-                </button>
-              ))}
-            </div>
-
-            {filterType === 'CUSTOM' && (
-              <div className="flex items-center gap-2">
-                <input type="date" className="h-8 px-2 text-[10px] font-bold border border-slate-300 rounded shadow-sm" value={customRange.start} onChange={e => setCustomRange({...customRange, start: e.target.value})} />
-                <ChevronRight size={14} className="text-slate-300"/>
-                <input type="date" className="h-8 px-2 text-[10px] font-bold border border-slate-300 rounded shadow-sm" value={customRange.end} onChange={e => setCustomRange({...customRange, end: e.target.value})} />
-              </div>
-            )}
+      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-xl">
+        <div className="p-2.5 bg-slate-50 border-b flex items-center justify-between shrink-0">
+          <h3 className="text-[10px] font-black uppercase text-slate-500">Histórico de Movimentação</h3>
+          <div className="flex bg-white border p-0.5 rounded-lg shadow-sm">
+            <button onClick={() => setFilterType('MES')} className={`px-3 py-1 rounded text-[8px] font-black transition-all ${filterType === 'MES' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>MÊS ATUAL</button>
+            <button onClick={() => setFilterType('TUDO')} className={`px-3 py-1 rounded text-[8px] font-black transition-all ${filterType === 'TUDO' ? 'bg-slate-900 text-white' : 'text-slate-400 hover:text-slate-600'}`}>TUDO</button>
           </div>
         </div>
 
         <div className="flex-1 overflow-auto custom-scrollbar">
-          <table className="w-full border-collapse min-w-[900px]">
-            <thead className="sticky top-0 bg-slate-100 z-10 border-b border-slate-200">
+          <table className="w-full border-collapse min-w-[500px]">
+            <thead className="sticky top-0 bg-slate-50 text-[8px] font-black uppercase text-slate-400 border-b z-10">
               <tr>
-                <th className="px-4 py-3 text-left text-[9px] font-black text-slate-500 uppercase border-r border-slate-200">Data</th>
-                <th className="px-3 py-3 text-center text-[9px] font-black text-slate-500 uppercase border-r border-slate-200">Ref</th>
-                <th className="px-4 py-3 text-right text-[9px] font-black text-green-700 uppercase border-r border-slate-200">Dinheiro</th>
-                <th className="px-4 py-3 text-right text-[9px] font-black text-cyan-700 uppercase border-r border-slate-200">Pix</th>
-                <th className="px-4 py-3 text-right text-[9px] font-black text-blue-700 uppercase border-r border-slate-200">Crédito</th>
-                <th className="px-4 py-3 text-right text-[9px] font-black text-slate-600 uppercase border-r border-slate-200">Débito</th>
-                <th className="px-4 py-3 text-right text-[9px] font-black text-red-600 uppercase border-r border-slate-200">Sangria</th>
-                <th className="px-4 py-3 text-right text-[10px] font-black text-slate-900 uppercase bg-slate-200/50">Saldo Final</th>
-                <th className="px-3 py-3 text-center text-[9px] font-black text-slate-500 uppercase">Ações</th>
+                <th className="px-3 py-3 text-left">Data</th>
+                <th className="px-3 py-3 text-right">Entradas (Total)</th>
+                <th className="px-3 py-3 text-right">Sangrias</th>
+                <th className="px-3 py-3 text-right">Líquido</th>
+                <th className="px-3 py-3 text-center w-20">Ações</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {filteredAndSortedEntries.map((e, idx) => {
+            <tbody className="divide-y divide-slate-50">
+              {filteredEntries.map((e) => {
                 const totalIn = e.cash + e.pix + e.credit + e.debit;
-                const saldo = totalIn - (e.sangria || 0);
-                const shiftNum = e.shift.split(' ')[1];
-
                 return (
-                  <tr key={e.id} className={`${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'} hover:bg-green-50/50 transition-colors`}>
-                    <td className="px-4 py-2 text-[10px] font-mono font-bold text-slate-800 border-r border-slate-100">{new Date(e.date + 'T12:00:00').toLocaleDateString('pt-BR')}</td>
-                    <td className="px-2 py-2 text-center border-r border-slate-100"><span className="text-[9px] font-black text-slate-500 border border-slate-200 px-1.5 py-0.5 rounded uppercase">{shiftNum}</span></td>
-                    <td className="px-4 py-2 text-right text-[10px] font-mono font-bold text-green-700 border-r border-slate-100">{formatMoney(e.cash)}</td>
-                    <td className="px-4 py-2 text-right text-[10px] font-mono font-bold text-cyan-700 border-r border-slate-100">{formatMoney(e.pix)}</td>
-                    <td className="px-4 py-2 text-right text-[10px] font-mono font-bold text-blue-700 border-r border-slate-100">{formatMoney(e.credit)}</td>
-                    <td className="px-4 py-2 text-right text-[10px] font-mono font-bold text-slate-700 border-r border-slate-100">{formatMoney(e.debit)}</td>
-                    <td className="px-4 py-2 text-right text-[10px] font-mono font-bold text-red-600 border-r border-slate-100">{formatMoney(e.sangria || 0)}</td>
-                    <td className="px-4 py-2 text-right text-[11px] font-mono font-black text-slate-900 bg-slate-100/40">{formatMoney(saldo)}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex justify-center gap-1">
-                        <button onClick={() => setDetailEntry(e)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg"><Eye size={13}/></button>
-                        <button onClick={() => {setEditingId(e.id); setFormData({...e});}} className="p-1.5 text-slate-400 hover:text-green-600 hover:bg-green-50 rounded-lg"><Save size={13}/></button>
-                        <button onClick={() => setDeletingId(e.id)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><X size={13}/></button>
-                      </div>
+                  <tr key={e.id} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-3 py-3 text-[10px] font-mono font-bold text-slate-600">
+                      {e.date.split('-').reverse().slice(0,2).join('/')}
+                      <span className="ml-2 text-[8px] font-black text-slate-300 uppercase">{e.shift.split(' ')[1]}</span>
+                    </td>
+                    <td className="px-3 py-3 text-right text-[10px] font-mono font-bold text-green-600">{formatMoney(totalIn)}</td>
+                    <td className="px-3 py-3 text-right text-[10px] font-mono font-bold text-red-500">{formatMoney(e.sangria)}</td>
+                    <td className="px-3 py-3 text-right text-[11px] font-mono font-black text-slate-900">{formatMoney(totalIn - e.sangria)}</td>
+                    <td className="px-3 py-3 text-center">
+                       <div className="flex justify-center gap-1">
+                          <button onClick={() => setDetailEntry(e)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors" title="Ver Detalhes"><Eye size={14}/></button>
+                          <button onClick={() => setDeletingId(e.id)} className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title="Excluir"><X size={14}/></button>
+                       </div>
                     </td>
                   </tr>
                 );
               })}
+              {filteredEntries.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-10 text-center text-[10px] font-black text-slate-300 uppercase italic">Nenhum registro encontrado</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
@@ -280,117 +232,74 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
   );
 };
 
-const SpreadsheetInput = ({ label, value, onChange, onKeyDown, inputRef, color }: any) => {
-  const colorStyles: any = {
-    green: 'border-l-green-600 group-focus-within:border-green-600',
-    cyan: 'border-l-cyan-500 group-focus-within:border-cyan-500',
-    blue: 'border-l-blue-600 group-focus-within:border-blue-600',
-    slate: 'border-l-slate-500 group-focus-within:border-slate-500',
-    orange: 'border-l-orange-600 group-focus-within:border-orange-600'
-  };
-
+const CompactInput = ({ label, value, onChange, color, onKeyDown, inputRef }: any) => {
   const handleRawChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.replace(/\D/g, ''); 
-    const numericValue = parseInt(raw, 10) / 100 || 0;
-    onChange(numericValue);
+    onChange(parseInt(raw, 10) / 100 || 0);
   };
 
-  const displayValue = value.toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+  const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+    e.target.select();
+  };
 
   return (
-    <div className={`p-3 bg-white border border-slate-200 border-l-4 ${colorStyles[color]} transition-all hover:bg-white shadow-sm rounded-r-xl group focus-within:shadow-md`}>
-      <label className="block text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">{label}</label>
-      <div className="relative flex items-baseline">
-        <span className="text-xs font-black text-slate-300 mr-2">R$</span>
+    <div className={`p-2 bg-slate-50 border-l-4 ${color} rounded-r-lg group focus-within:border-l-blue-500 focus-within:bg-white transition-all border border-transparent border-l-inherit shadow-sm`}>
+      <label className="block text-[8px] font-black text-slate-400 uppercase leading-none mb-1">{label}</label>
+      <div className="flex items-baseline gap-1">
+        <span className="text-[10px] font-black text-slate-300 uppercase">R$</span>
         <input 
           ref={inputRef}
           type="text" 
-          inputMode="numeric"
-          className="w-full bg-transparent border-none outline-none font-mono font-black text-2xl text-slate-900 placeholder:text-slate-100" 
-          value={displayValue} 
+          inputMode="numeric" 
+          className="w-full bg-transparent border-none outline-none font-mono font-black text-lg text-slate-800" 
+          value={value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} 
+          onChange={handleRawChange}
           onKeyDown={onKeyDown}
-          onChange={handleRawChange} 
-          placeholder="0,00"
+          onFocus={handleFocus}
         />
       </div>
     </div>
   );
 };
 
-const DetailViewModal = ({ entry, onClose }: { entry: CashEntry, onClose: () => void }) => {
-  const totalIn = entry.cash + entry.pix + entry.credit + entry.debit;
-  const saldoFinal = totalIn - (entry.sangria || 0);
-
+const DetailViewModal = ({ entry, onClose }: any) => {
+  const totalCards = entry.credit + entry.debit;
   return (
-    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200">
-        <div className="p-6 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-green-500 text-white rounded-xl shadow-lg shadow-green-200">
-              <ReceiptText size={20}/>
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl shadow-2xl max-w-xs w-full overflow-hidden animate-in zoom-in-95 duration-200">
+        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+          <h2 className="text-[10px] font-black uppercase text-slate-800 tracking-widest">Detalhamento do Caixa</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors"><X size={18}/></button>
+        </div>
+        <div className="p-6 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-[8px] font-black text-slate-400 uppercase">Data</p>
+              <p className="text-xs font-black text-slate-800">{entry.date.split('-').reverse().join('/')}</p>
             </div>
             <div>
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Recibo de Conferência</h2>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Protocolo BE-{entry.code}</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 text-slate-300 hover:text-slate-800 transition-colors"><X size={20}/></button>
-        </div>
-
-        <div className="p-8 space-y-6">
-          <div className="flex justify-between items-center bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-inner">
-            <div className="flex flex-col">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Data</span>
-              <span className="text-xs font-bold text-slate-800">{new Date(entry.date + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
-            </div>
-            <div className="text-right flex flex-col">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Terminal</span>
-              <span className="text-xs font-bold text-slate-800">{entry.shift}</span>
+              <p className="text-[8px] font-black text-slate-400 uppercase">Turno</p>
+              <p className="text-xs font-black text-slate-800">{entry.shift.split(' ')[1]}</p>
             </div>
           </div>
 
-          <div className="space-y-3">
-             <DetailRow label="Cédulas/Espécie" value={entry.cash} color="text-green-700" />
-             <DetailRow label="Transferências Pix" value={entry.pix} color="text-cyan-600" />
-             <DetailRow label="Cartão de Crédito" value={entry.credit} color="text-blue-700" />
-             <DetailRow label="Cartão de Débito" value={entry.debit} color="text-slate-600" />
-             <div className="pt-3 border-t border-slate-100 flex justify-between">
-                <span className="text-[10px] font-black text-slate-800 uppercase">Faturamento Bruto</span>
-                <span className="text-xs font-mono font-black text-slate-900">{formatMoney(totalIn)}</span>
-             </div>
+          <div className="pt-4 border-t space-y-2">
+             <div className="flex justify-between text-[11px] font-bold text-slate-600"><span>Dinheiro</span> <span className="font-mono">{formatMoney(entry.cash)}</span></div>
+             <div className="flex justify-between text-[11px] font-bold text-slate-600"><span>Pix</span> <span className="font-mono">{formatMoney(entry.pix)}</span></div>
+             <div className="flex justify-between text-[11px] font-bold text-slate-600"><span>Crédito</span> <span className="font-mono">{formatMoney(entry.credit)}</span></div>
+             <div className="flex justify-between text-[11px] font-bold text-slate-600"><span>Débito</span> <span className="font-mono">{formatMoney(entry.debit)}</span></div>
+             <div className="flex justify-between text-[11px] font-black text-red-500 pt-1"><span>Sangrias</span> <span className="font-mono">-{formatMoney(entry.sangria)}</span></div>
           </div>
 
-          {entry.sangria > 0 && (
-            <div className="pt-4 border-t border-red-50">
-               <div className="flex items-center gap-2 mb-2">
-                 <ArrowDownCircle size={14} className="text-red-500"/>
-                 <span className="text-[10px] font-black text-red-500 uppercase tracking-widest">Retiradas de Caixa</span>
-               </div>
-               <DetailRow label="Sangria Manual" value={entry.sangria} color="text-red-600" />
-            </div>
-          )}
-
-          <div className="mt-6 p-6 bg-slate-900 rounded-2xl flex flex-col items-center shadow-none">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Disponível Líquido</span>
-            <span className="text-3xl font-black text-green-400 font-mono tracking-tighter">
-              {formatMoney(saldoFinal)}
-            </span>
+          <div className="mt-4 p-5 bg-slate-900 rounded-2xl text-center shadow-lg">
+            <p className="text-[8px] font-black text-slate-500 uppercase mb-1 tracking-widest">Saldo Final em Caixa</p>
+            <p className="text-2xl font-mono font-black text-green-400 leading-none">{formatMoney(entry.cash + entry.pix + entry.credit + entry.debit - entry.sangria)}</p>
           </div>
         </div>
-
-        <div className="p-4 bg-slate-50 flex justify-center">
-           <button onClick={onClose} className="px-12 py-3 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-700 transition-all shadow-lg active:scale-95">Concluir Auditoria</button>
-        </div>
+        <button onClick={onClose} className="w-full py-4 bg-slate-50 text-[10px] font-black uppercase text-slate-500 hover:bg-slate-100 transition-colors border-t">Fechar Resumo</button>
       </div>
     </div>
   );
 };
-
-const DetailRow = ({ label, value, color }: { label: string, value: number, color?: string }) => (
-  <div className="flex justify-between items-center text-[11px] font-semibold">
-    <span className="text-slate-500">{label}</span>
-    <span className={`font-mono ${color || 'text-slate-800'}`}>{formatMoney(value)}</span>
-  </div>
-);
 
 export default CashEntryForm;

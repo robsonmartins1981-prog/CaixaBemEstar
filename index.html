@@ -3,7 +3,7 @@
 <html lang="pt-br">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Bem Estar Controle - Gestão Financeira</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
@@ -24,79 +24,36 @@
               sans: ['Inter', 'sans-serif'],
             },
             boxShadow: {
-              'subtle': '0 4px 20px -4px rgba(0,0,0,0.03)',
-              'subtle-lg': '0 10px 30px -10px rgba(0,0,0,0.05)'
+              'subtle': '0 2px 10px -2px rgba(0,0,0,0.03)',
+              'subtle-lg': '0 6px 20px -6px rgba(0,0,0,0.05)'
             }
           }
         }
       }
     </script>
     <style>
-      /* Reset básico para funcionamento do App */
-      html, body { height: 100%; margin: 0; padding: 0; }
-      body { background-color: #f8fafc; color: #1e293b; overflow-x: hidden; }
+      html, body { height: 100%; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+      body { background-color: #f1f5f9; color: #1e293b; overflow-x: hidden; font-size: 14px; }
       
-      .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-      .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+      /* Otimização de scrollbars */
+      .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-      .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+      
+      .no-scrollbar::-webkit-scrollbar { display: none; }
 
-      /* REGRAS DE IMPRESSÃO - CORREÇÃO DEFINITIVA */
+      /* Ajustes para inputs mobile */
+      input, select, button { font-size: 16px !important; } /* Previne zoom no iOS */
+      @media (min-width: 768px) {
+        input, select, button { font-size: 14px !important; }
+      }
+
+      /* REGRAS DE IMPRESSÃO */
       @media print {
-        @page {
-          size: A4;
-          margin: 10mm;
-        }
-
-        /* Oculta TUDO que tenha a classe no-print */
-        .no-print, aside, header, nav, button, .controls-bar {
-          display: none !important;
-          visibility: hidden !important;
-        }
-
-        /* Quebra as amarras de overflow:hidden do layout principal */
-        html, body, #root, main, .flex-1, .overflow-hidden, .overflow-auto, .h-full {
-          display: block !important;
-          overflow: visible !important;
-          height: auto !important;
-          min-height: auto !important;
-          position: static !important;
-          background: white !important;
-        }
-
-        /* Garante que o container do relatório ocupe a largura total */
-        .max-w-4xl, .max-w-5xl {
-          max-width: 100% !important;
-          width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-        }
-
-        /* Força os gráficos SVG a aparecerem */
-        .recharts-responsive-container {
-          width: 100% !important;
-          height: 350px !important; /* Altura fixa necessária para renderizar SVGs no print */
-          min-height: 350px !important;
-          display: block !important;
-          page-break-inside: avoid;
-        }
-
-        /* Preservar cores (Tailwind utiliza cores de fundo que o print costuma ignorar) */
-        * {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-
-        /* Remove sombras que ficam borradas na impressão */
-        .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl {
-          box-shadow: none !important;
-          border: 1px solid #eee !important;
-        }
-
-        .bg-slate-900 {
-          background-color: #000 !important;
-          color: #fff !important;
-        }
+        @page { size: A4; margin: 10mm; }
+        .no-print { display: none !important; }
+        body { background: white !important; }
+        .recharts-responsive-container { height: 300px !important; }
       }
     </style>
 <script type="importmap">

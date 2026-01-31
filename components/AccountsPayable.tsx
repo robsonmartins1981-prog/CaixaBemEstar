@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Expense, ExpenseNature, CostType, Supplier } from '../types.ts';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Expense, ExpenseNature, Supplier } from '../types.ts';
 import { db } from '../services/db.ts';
-import { NATURES, COST_TYPES } from '../constants.tsx';
+import { NATURES } from '../constants.tsx';
 import { 
-  Plus, Trash2, Receipt, List, CheckCircle, Clock, 
-  Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, AlertTriangle, ArrowUpDown, ChevronUp, Repeat,
-  CheckSquare, Square
+  Plus, Trash2, Search, Filter, X, CheckSquare, Square, 
+  ChevronDown, User, Calendar, Edit2, Info, Calculator, Layers,
+  TrendingUp, AlertCircle, CheckCircle2
 } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal.tsx';
 
@@ -18,509 +18,450 @@ interface AccountsPayableProps {
 const formatMoney = (val: number) => 
   val.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-type FilterStatus = 'Todos' | 'Agendadas' | 'Pagas' | 'Vencidas' | 'Vencendo (7 dias)';
-type SortConfig = { key: keyof Expense; direction: 'asc' | 'desc' } | null;
-
 const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }) => {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([]);
-  const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<FilterStatus>('Todos');
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dueDate', direction: 'asc' });
+  const [filterStatus, setFilterStatus] = useState('Todos');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Novo estado para filtro de natureza
+  // Fornecedores e Sugestões
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestionRef = useRef<HTMLDivElement>(null);
+
+  // Parcelamento
+  const [isInstallment, setIsInstallment] = useState(false);
+  const [installmentCount, setInstallmentCount] = useState(2);
+  const [intervalDays, setIntervalDays] = useState(30);
+  const [valueMode, setValueMode] = useState<'total' | 'parcel'>('total');
+
+  // Filtros
   const [selectedNatures, setSelectedNatures] = useState<string[]>(Array.from(NATURES));
   const [showNatureFilter, setShowNatureFilter] = useState(false);
 
-  const [isInstallment, setIsInstallment] = useState(false);
-  const [installmentsCount, setInstallmentsCount] = useState(2);
-  const [intervalDays, setIntervalDays] = useState(30);
-
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  
   const [formData, setFormData] = useState<Omit<Expense, 'id'>>({
-    description: '',
-    supplier: '',
-    dueDate: new Date().toISOString().split('T')[0],
-    value: 0,
-    nature: 'Outros',
-    costType: 'Variável',
-    status: 'Pendente',
+    description: '', supplier: '', dueDate: new Date().toISOString().split('T')[0],
+    value: 0, nature: 'Outros', costType: 'Variável', status: 'Pendente',
   });
 
   useEffect(() => {
-    setSuppliers(db.getSuppliers());
+    setAllSuppliers(db.getSuppliers());
     const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowSupplierDropdown(false);
+      if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (formData.supplier.trim().length > 0) {
-        const query = formData.supplier.toLowerCase();
-        const results = suppliers.filter(s => 
-          s.name.toLowerCase().includes(query) || 
-          s.category.toLowerCase().includes(query)
-        );
-        setFilteredSuppliers(results);
-      } else {
-        setFilteredSuppliers(suppliers.slice(0, 5));
-      }
-    }, 200);
-    return () => clearTimeout(timer);
-  }, [formData.supplier, suppliers]);
+  const filteredSuppliers = useMemo(() => {
+    if (!formData.supplier.trim()) return [];
+    return allSuppliers.filter(s => 
+      s.name.toLowerCase().includes(formData.supplier.toLowerCase())
+    ).slice(0, 5);
+  }, [formData.supplier, allSuppliers]);
 
-  const resetForm = () => {
-    setFormData({
-      description: '',
-      supplier: '',
-      dueDate: new Date().toISOString().split('T')[0],
-      value: 0,
-      nature: 'Outros',
-      costType: 'Variável',
-      status: 'Pendente',
-    });
-    setEditingId(null);
-    setShowForm(false);
-    setIsInstallment(false);
-    setInstallmentsCount(2);
-    setIntervalDays(30);
+  const processedExpenses = useMemo(() => {
+    return expenses.filter(exp => {
+      const matchSearch = exp.supplier.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          exp.description.toLowerCase().includes(searchTerm.toLowerCase());
+      const matchNature = selectedNatures.includes(exp.nature);
+      const matchStatus = filterStatus === 'Todos' || exp.status === filterStatus || (filterStatus === 'Agendadas' && exp.status === 'Pendente');
+      return matchSearch && matchNature && matchStatus;
+    }).sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  }, [expenses, filterStatus, searchTerm, selectedNatures]);
+
+  const handleSelectSupplier = (s: Supplier) => {
+    setFormData(prev => ({ 
+      ...prev, 
+      supplier: s.name, 
+      nature: (s.category as any) || prev.nature 
+    }));
+    setShowSuggestions(false);
+  };
+
+  const addDays = (dateStr: string, days: number) => {
+    const date = new Date(dateStr + 'T12:00:00');
+    date.setDate(date.getDate() + days);
+    return date.toISOString().split('T')[0];
   };
 
   const handleEdit = (expense: Expense) => {
-    setFormData({ ...expense });
     setEditingId(expense.id);
-    setShowForm(true);
+    setFormData({
+      description: expense.description,
+      supplier: expense.supplier,
+      dueDate: expense.dueDate,
+      value: expense.value,
+      nature: expense.nature,
+      costType: expense.costType,
+      status: expense.status
+    });
     setIsInstallment(false);
+    setShowForm(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const resetFormState = () => {
+    setEditingId(null);
+    setIsInstallment(false);
+    setInstallmentCount(2);
+    setValueMode('total');
+    setFormData({
+      description: '', supplier: '', dueDate: new Date().toISOString().split('T')[0],
+      value: 0, nature: 'Outros', costType: 'Variável', status: 'Pendente',
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
     if (editingId) {
       db.updateExpense(editingId, formData);
-    } else {
-      if (isInstallment && installmentsCount > 1) {
-        const valuePerInstallment = formData.value / installmentsCount;
-        const baseDate = new Date(formData.dueDate + 'T12:00:00');
-        for (let i = 0; i < installmentsCount; i++) {
-          const installmentDate = new Date(baseDate);
-          installmentDate.setDate(baseDate.getDate() + (i * intervalDays));
-          const installmentData = {
-            ...formData,
-            description: `${formData.description} [${String(i + 1).padStart(2, '0')}/${String(installmentsCount).padStart(2, '0')}]`,
-            dueDate: installmentDate.toISOString().split('T')[0],
-            value: valuePerInstallment
-          };
-          db.saveExpense(installmentData);
-        }
-      } else {
-        db.saveExpense(formData);
+    } else if (isInstallment && installmentCount > 1) {
+      const valuePerParcel = valueMode === 'total' ? (formData.value / installmentCount) : formData.value;
+      const baseDescription = formData.description;
+      
+      for (let i = 0; i < installmentCount; i++) {
+        const parcelDate = addDays(formData.dueDate, i * intervalDays);
+        db.saveExpense({
+          ...formData,
+          description: `${baseDescription} (${i + 1}/${installmentCount})`,
+          dueDate: parcelDate,
+          value: valuePerParcel
+        });
       }
+    } else {
+      db.saveExpense(formData);
     }
+
     onSuccess();
-    resetForm();
+    resetFormState();
+    setShowForm(false);
   };
 
-  const handleValueChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/\D/g, '');
-    const numericValue = parseInt(raw, 10) / 100 || 0;
-    setFormData({ ...formData, value: numericValue });
-  };
-
-  const getVencimentoStatus = (dueDate: string, status: string) => {
-    if (status === 'Pago') return 'none';
-    const today = new Date();
-    today.setHours(0,0,0,0);
-    const due = new Date(dueDate + 'T12:00:00');
-    due.setHours(0,0,0,0);
-    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (diffDays < 0) return 'late';
-    if (diffDays <= 7) return 'warning';
-    return 'none';
-  };
-
-  const handleSort = (key: keyof Expense) => {
-    let direction: 'asc' | 'desc' = 'asc';
-    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
-      direction = 'desc';
-    }
-    setSortConfig({ key, direction });
-  };
-
-  const toggleNature = (nature: string) => {
-    setSelectedNatures(prev => 
-      prev.includes(nature) 
-        ? prev.filter(n => n !== nature) 
-        : [...prev, nature]
-    );
-  };
-
-  const selectAllNatures = () => setSelectedNatures(Array.from(NATURES));
-  const deselectAllNatures = () => setSelectedNatures([]);
-
-  const processedExpenses = useMemo(() => {
-    let filtered = expenses.filter(exp => {
-      // Filtro de Busca
-      const searchMatch = 
-        exp.supplier.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        exp.nature.toLowerCase().includes(searchTerm.toLowerCase());
-      if (!searchMatch) return false;
-
-      // Filtro de Natureza (Categoria)
-      if (!selectedNatures.includes(exp.nature)) return false;
-
-      // Filtro de Status / Vencimento
-      const today = new Date();
-      today.setHours(0,0,0,0);
-      const limit7Days = new Date(today);
-      limit7Days.setDate(today.getDate() + 7);
-      const due = new Date(exp.dueDate + 'T12:00:00');
-      due.setHours(0,0,0,0);
-
-      if (filterStatus === 'Agendadas') return exp.status === 'Pendente' && due >= today;
-      if (filterStatus === 'Pagas') return exp.status === 'Pago';
-      if (filterStatus === 'Vencidas') return exp.status === 'Pendente' && due < today;
-      if (filterStatus === 'Vencendo (7 dias)') return exp.status === 'Pendente' && due >= today && due <= limit7Days;
-      return true;
-    });
-
-    if (sortConfig) {
-      filtered.sort((a, b) => {
-        const valA = a[sortConfig.key];
-        const valB = b[sortConfig.key];
-        
-        if (typeof valA === 'string' && typeof valB === 'string') {
-          return sortConfig.direction === 'asc' 
-            ? valA.localeCompare(valB) 
-            : valB.localeCompare(valA);
-        }
-        
-        if (typeof valA === 'number' && typeof valB === 'number') {
-          return sortConfig.direction === 'asc' ? valA - valB : valB - valA;
-        }
-        
-        return 0;
-      });
-    }
-
-    return filtered;
-  }, [expenses, filterStatus, sortConfig, searchTerm, selectedNatures]);
-
-  const pendingTotal = expenses.filter(e => e.status === 'Pendente').reduce((acc, curr) => acc + curr.value, 0);
-  const paidTotal = expenses.filter(e => e.status === 'Pago').reduce((acc, curr) => acc + curr.value, 0);
-
-  const SortIndicator = ({ column }: { column: keyof Expense }) => {
-    if (sortConfig?.key !== column) return <ArrowUpDown size={12} className="ml-1 opacity-20" />;
-    return sortConfig.direction === 'asc' 
-      ? <ChevronUp size={12} className="ml-1 text-blue-600" /> 
-      : <ChevronDown size={12} className="ml-1 text-blue-600" />;
-  };
+  const totals = useMemo(() => {
+    const pendente = processedExpenses.filter(e => e.status === 'Pendente').reduce((a,c) => a+c.value, 0);
+    const pago = processedExpenses.filter(e => e.status === 'Pago').reduce((a,c) => a+c.value, 0);
+    return { pendente, pago, total: pendente + pago };
+  }, [processedExpenses]);
 
   return (
-    <div className="flex-1 flex flex-col gap-4 h-full overflow-hidden">
+    <div className="flex-1 flex flex-col gap-2 h-full overflow-hidden">
       <ConfirmationModal 
         isOpen={!!deletingId}
         onClose={() => setDeletingId(null)}
         onConfirm={() => { db.deleteExpense(deletingId!); onSuccess(); setDeletingId(null); }}
-        title="Excluir Título"
-        message="Deseja remover este compromisso financeiro permanentemente?"
+        title="Excluir Registro"
+        message="Tem certeza que deseja remover esta conta permanentemente?"
       />
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 shrink-0">
-        <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
-             <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Clock size={18}/></div>
-             <div>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Previsão Pendente</p>
-               <p className="text-lg font-mono font-black text-slate-800 tracking-tighter">{formatMoney(pendingTotal)}</p>
-             </div>
-          </div>
+      {/* PAINEL DE TOTAIS CONSOLIDADOS */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 shrink-0">
+        <div className="bg-white border p-3 rounded-2xl shadow-sm flex items-center gap-3 border-l-4 border-l-orange-500">
+           <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500 shrink-0">
+             <AlertCircle size={18}/>
+           </div>
+           <div>
+             <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">A Pagar (Pendentes)</p>
+             <p className="text-sm font-mono font-black text-slate-800 leading-none">{formatMoney(totals.pendente)}</p>
+           </div>
         </div>
-        <div className="bg-white border border-slate-200 p-4 rounded-xl flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-3">
-             <div className="p-2 bg-green-100 text-green-600 rounded-lg"><CheckCircle size={18}/></div>
-             <div>
-               <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Liquidado</p>
-               <p className="text-lg font-mono font-black text-slate-800 tracking-tighter">{formatMoney(paidTotal)}</p>
-             </div>
-          </div>
+        <div className="bg-white border p-3 rounded-2xl shadow-sm flex items-center gap-3 border-l-4 border-l-green-500">
+           <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center text-green-500 shrink-0">
+             <CheckCircle2 size={18}/>
+           </div>
+           <div>
+             <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">Contas Pagas</p>
+             <p className="text-sm font-mono font-black text-green-600 leading-none">{formatMoney(totals.pago)}</p>
+           </div>
+        </div>
+        <div className="bg-white border p-3 rounded-2xl shadow-sm flex items-center gap-3 border-l-4 border-l-blue-600">
+           <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-600 shrink-0">
+             <TrendingUp size={18}/>
+           </div>
+           <div>
+             <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">Total Movimentado</p>
+             <p className="text-sm font-mono font-black text-slate-900 leading-none">{formatMoney(totals.total)}</p>
+           </div>
         </div>
         <button 
-          onClick={() => setShowForm(!showForm)}
-          className={`flex items-center justify-center gap-2 px-6 py-4 rounded-xl font-black uppercase text-[11px] transition-all shadow-md ${showForm ? 'bg-slate-900 text-white' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+          onClick={() => { if(showForm) resetFormState(); setShowForm(!showForm); }} 
+          className={`col-span-2 lg:col-span-1 text-white rounded-2xl text-[10px] font-black uppercase flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${showForm ? 'bg-slate-500' : 'bg-blue-600 hover:bg-blue-700'}`}
         >
-          {showForm ? <X size={20}/> : <Plus size={20}/>}
-          {showForm ? 'Fechar Formulário' : 'Novo Lançamento'}
+          {showForm ? <X size={16}/> : <Plus size={16}/>} {showForm ? 'Cancelar' : 'Novo Título'}
         </button>
       </div>
 
       {showForm && (
-        <div className="bg-white border border-slate-200 shadow-xl rounded-2xl overflow-visible animate-in slide-in-from-top-4 duration-300 shrink-0">
-          <div className="p-4 bg-slate-50 border-b flex items-center justify-between">
-            <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-800">
-              {editingId ? 'Editar Título' : 'Cadastro de Título'}
-            </h3>
+        <form onSubmit={handleSubmit} className="bg-white border p-4 rounded-3xl shadow-xl grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0 animate-in slide-in-from-top-2 overflow-visible relative">
+          <div className="col-span-4 flex items-center gap-2 mb-1">
+             <div className={`w-2 h-2 rounded-full ${editingId ? 'bg-orange-500' : 'bg-blue-500'}`}></div>
+             <h4 className="text-[10px] font-black uppercase text-slate-600 tracking-widest">
+               {editingId ? `Edição de Lançamento` : 'Cadastro de Novo Compromisso'}
+             </h4>
           </div>
-          <form onSubmit={handleSubmit} className="p-6 grid grid-cols-1 md:grid-cols-4 gap-4 overflow-visible">
-            <div className="md:col-span-2 space-y-1 relative" ref={dropdownRef}>
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fornecedor</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
-                <input 
-                  type="text" required 
-                  autoComplete="off"
-                  className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" 
-                  value={formData.supplier} 
-                  onChange={e => { setFormData({ ...formData, supplier: e.target.value }); setShowSupplierDropdown(true); }}
-                  onFocus={() => setShowSupplierDropdown(true)}
-                  placeholder="Nome do fornecedor..."
-                />
+
+          <div className="col-span-2 relative">
+            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Fornecedor</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={14}/>
+              <input 
+                placeholder="Busca automática..." 
+                className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400" 
+                value={formData.supplier} 
+                onChange={e => {
+                  setFormData({...formData, supplier: e.target.value});
+                  setShowSuggestions(true);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                required 
+              />
+            </div>
+            
+            {showSuggestions && filteredSuppliers.length > 0 && (
+              <div ref={suggestionRef} className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 shadow-2xl rounded-2xl z-[100] overflow-hidden">
+                {filteredSuppliers.map(s => (
+                  <button 
+                    key={s.id} 
+                    type="button"
+                    onClick={() => handleSelectSupplier(s)}
+                    className="w-full text-left px-4 py-3 hover:bg-blue-50 flex flex-col border-b border-slate-50 last:border-0"
+                  >
+                    <span className="text-[11px] font-black text-slate-800 uppercase leading-none">{s.name}</span>
+                    <span className="text-[8px] font-bold text-slate-400 uppercase mt-1">{s.category}</span>
+                  </button>
+                ))}
               </div>
-              {showSupplierDropdown && filteredSuppliers.length > 0 && (
-                <div className="absolute z-[110] left-0 right-0 top-full mt-1 bg-white border border-slate-200 shadow-2xl rounded-xl overflow-hidden max-h-60 overflow-y-auto custom-scrollbar">
-                  {filteredSuppliers.map(s => (
-                    <button 
-                      key={s.id} type="button" 
-                      onClick={() => { setFormData({ ...formData, supplier: s.name, nature: s.category as any }); setShowSupplierDropdown(false); }} 
-                      className="w-full p-3 text-left hover:bg-blue-50 border-b border-slate-50 last:border-0 transition-colors"
-                    >
-                      <p className="text-[10px] font-black uppercase text-slate-800">{s.name}</p>
-                      <p className="text-[8px] font-bold text-slate-400 uppercase">{s.category}</p>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="md:col-span-2 space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Descrição / Observação</label>
-              <input type="text" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Vencimento</label>
-              <input type="date" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" value={formData.dueDate} onChange={e => setFormData({ ...formData, dueDate: e.target.value })} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Valor</label>
-              <input type="text" required className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none font-mono" value={formData.value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} onChange={handleValueChange} />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Natureza</label>
-              <select className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase rounded-lg outline-none" value={formData.nature} onChange={e => setFormData({ ...formData, nature: e.target.value as any })}>
-                {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
-
-            <div className="flex items-end gap-3 md:col-span-1">
-               <button 
-                type="button"
-                disabled={!!editingId}
-                onClick={() => setIsInstallment(!isInstallment)}
-                className={`h-10 px-4 rounded-lg flex items-center gap-2 text-[9px] font-black uppercase transition-all border ${
-                  isInstallment 
-                    ? 'bg-blue-600 text-white border-blue-500 shadow-md' 
-                    : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100 disabled:opacity-30'
-                }`}
-               >
-                 <Repeat size={14}/> {isInstallment ? 'Parcelado' : 'Parcelar?'}
-               </button>
-            </div>
-
-            {isInstallment && !editingId && (
-              <>
-                <div className="space-y-1 animate-in zoom-in-95">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Qtd. Parcelas</label>
-                  <input 
-                    type="number" min="2" max="100"
-                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" 
-                    value={installmentsCount} 
-                    onChange={e => setInstallmentsCount(parseInt(e.target.value) || 2)} 
-                  />
-                </div>
-                <div className="space-y-1 animate-in zoom-in-95">
-                  <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Intervalo (Dias)</label>
-                  <input 
-                    type="number" min="1" max="365"
-                    className="w-full h-10 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-lg focus:border-blue-500 outline-none" 
-                    value={intervalDays} 
-                    onChange={e => setIntervalDays(parseInt(e.target.value) || 30)} 
-                  />
-                </div>
-              </>
             )}
+          </div>
 
-            <div className={`flex items-end ${isInstallment ? 'md:col-span-4' : 'md:col-span-1'}`}>
-              <button type="submit" className="w-full h-10 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase tracking-widest shadow-lg hover:bg-blue-700 active:scale-95 transition-all">
-                {editingId ? 'Salvar Alterações' : isInstallment ? 'Confirmar Parcelamento' : 'Confirmar Título'}
-              </button>
+          <div className="col-span-2">
+            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Natureza do Gasto</label>
+            <select className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:border-blue-400" value={formData.nature} onChange={e => setFormData({...formData, nature: e.target.value as any})} required>
+              {NATURES.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </div>
+
+          <div className="col-span-2">
+            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Descrição</label>
+            <input placeholder="Ex: NF 123 - Bebidas" className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} required />
+          </div>
+
+          <div>
+            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">{editingId ? 'Vencimento' : 'Data de Início'}</label>
+            <input type="date" className="w-full h-10 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-blue-400" value={formData.dueDate} onChange={e => setFormData({...formData, dueDate: e.target.value})} required />
+          </div>
+
+          <div>
+            <label className="text-[8px] font-black text-slate-400 uppercase ml-1">
+              {editingId ? 'Valor' : (valueMode === 'total' ? 'Valor Total da Nota' : 'Valor de Cada Parcela')}
+            </label>
+            <input placeholder="0,00" type="number" step="0.01" className="w-full h-10 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-black font-mono outline-none focus:border-blue-400" value={formData.value || ''} onChange={e => setFormData({...formData, value: parseFloat(e.target.value) || 0})} required />
+          </div>
+
+          {/* Módulo de Parcelamento */}
+          {!editingId && (
+            <div className="col-span-4 bg-slate-50 p-4 rounded-2xl border border-slate-200 mt-1">
+               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-3">
+                  <button 
+                    type="button"
+                    onClick={() => setIsInstallment(!isInstallment)}
+                    className={`flex items-center gap-2 text-[10px] font-black uppercase transition-all ${isInstallment ? 'text-blue-600' : 'text-slate-400'}`}
+                  >
+                    {isInstallment ? <CheckSquare size={18}/> : <Square size={18}/>}
+                    Gerar Parcelas em Massa
+                  </button>
+
+                  {isInstallment && (
+                    <div className="flex bg-white border border-slate-200 p-1 rounded-xl shadow-sm">
+                      <button 
+                        type="button"
+                        onClick={() => setValueMode('total')}
+                        className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-all ${valueMode === 'total' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400'}`}
+                      >
+                        Valor Total
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={() => setValueMode('parcel')}
+                        className={`px-3 py-1 rounded-lg text-[8px] font-black uppercase transition-all ${valueMode === 'parcel' ? 'bg-slate-900 text-white shadow-md' : 'text-slate-400'}`}
+                      >
+                        Valor Unitário
+                      </button>
+                    </div>
+                  )}
+               </div>
+               
+               {isInstallment && (
+                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 animate-in slide-in-from-left-2">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Nº de Parcelas</label>
+                      <input 
+                        type="number" min="2" max="60" 
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-xs font-black outline-none focus:border-blue-400"
+                        value={installmentCount}
+                        onChange={e => setInstallmentCount(parseInt(e.target.value) || 2)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-black text-slate-400 uppercase ml-1">Prazo entre Parcelas</label>
+                      <select 
+                        className="w-full h-9 px-3 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase outline-none focus:border-blue-400"
+                        value={intervalDays}
+                        onChange={e => setIntervalDays(parseInt(e.target.value))}
+                      >
+                        <option value="7">7 Dias (Semanal)</option>
+                        <option value="10">10 Dias (Dezena)</option>
+                        <option value="15">15 Dias (Quinzenal)</option>
+                        <option value="30">30 Dias (Mensal)</option>
+                      </select>
+                    </div>
+                    <div className="col-span-2 flex items-center gap-3 bg-white p-3 border border-slate-200 rounded-xl shadow-inner">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-500 flex items-center justify-center shrink-0">
+                        {valueMode === 'total' ? <Calculator size={18}/> : <Layers size={18}/>}
+                      </div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase leading-tight">
+                        {valueMode === 'total' ? (
+                          <>Serão {installmentCount} de <span className="text-blue-600 font-black">{formatMoney(formData.value / installmentCount)}</span></>
+                        ) : (
+                          <>Total Final: <span className="text-blue-600 font-black">{formatMoney(formData.value * installmentCount)}</span> em {installmentCount}x.</>
+                        )}
+                        <br/>
+                        <span className="text-[7px] text-slate-400 italic">Projeção até {addDays(formData.dueDate, (installmentCount-1) * intervalDays).split('-').reverse().join('/')}</span>
+                      </p>
+                    </div>
+                 </div>
+               )}
             </div>
-          </form>
-        </div>
+          )}
+
+          <div className="col-span-4 flex justify-end gap-3 mt-2">
+            <button 
+              type="submit" 
+              className={`w-full lg:w-auto px-12 h-11 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 ${editingId ? 'bg-orange-500' : 'bg-blue-600 hover:bg-blue-700'}`}
+            >
+              {editingId ? <Edit2 size={16}/> : <Calendar size={16}/>} 
+              {editingId ? 'Salvar Alterações' : 'Confirmar Lançamento'}
+            </button>
+          </div>
+        </form>
       )}
 
-      <div className="bg-white border border-slate-200 p-3 rounded-xl flex flex-col xl:flex-row items-center justify-between gap-4 shadow-sm shrink-0">
-        <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto overflow-x-auto no-scrollbar">
-          {(['Todos', 'Agendadas', 'Pagas', 'Vencidas', 'Vencendo (7 dias)'] as FilterStatus[]).map(s => (
-            <button
-              key={s}
-              onClick={() => setFilterStatus(s)}
-              className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all whitespace-nowrap ${
-                filterStatus === s ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex items-center gap-2 w-full xl:w-auto">
-          <button 
-            onClick={() => setShowNatureFilter(!showNatureFilter)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${
-              showNatureFilter ? 'bg-slate-800 text-white border-slate-700 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-            }`}
-          >
-            <Filter size={14}/> Naturezas ({selectedNatures.length})
-          </button>
-
-          <div className="relative flex-1 xl:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
-            <input 
-              type="text"
-              placeholder="Buscar fornecedor ou descrição..."
-              className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500"
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Seção Expandível de Filtro por Natureza */}
-      {showNatureFilter && (
-        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-inner animate-in slide-in-from-top-2 duration-300 shrink-0">
-          <div className="flex items-center justify-between mb-4">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-              <Layers size={14} className="text-blue-500"/> Filtrar por Categorias
-            </h4>
-            <div className="flex gap-2">
-              <button onClick={selectAllNatures} className="text-[8px] font-black uppercase text-blue-600 hover:underline">Marcar Todas</button>
-              <span className="text-slate-300">|</span>
-              <button onClick={deselectAllNatures} className="text-[8px] font-black uppercase text-slate-400 hover:underline">Limpar</button>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {NATURES.map(nature => (
-              <button
-                key={nature}
-                onClick={() => toggleNature(nature)}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase transition-all ${
-                  selectedNatures.includes(nature) 
-                    ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm' 
-                    : 'bg-white text-slate-400 border-slate-100 opacity-60'
-                }`}
-              >
-                {selectedNatures.includes(nature) ? <CheckSquare size={12}/> : <Square size={12}/>}
-                {nature}
-              </button>
+      <div className="bg-white border p-2 rounded-2xl flex flex-col gap-2 shrink-0 shadow-sm">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <div className="flex bg-slate-100 p-1 rounded-xl overflow-x-auto no-scrollbar shrink-0">
+            {['Todos', 'Agendadas', 'Pagas'].map(s => (
+              <button key={s} onClick={() => setFilterStatus(s)} className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase whitespace-nowrap transition-all ${filterStatus === s ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}>{s}</button>
             ))}
           </div>
-        </div>
-      )}
+          
+          <button 
+            onClick={() => setShowNatureFilter(!showNatureFilter)}
+            className={`flex items-center justify-between px-4 h-9 rounded-xl text-[9px] font-black uppercase border transition-all ${showNatureFilter ? 'bg-slate-800 text-white border-slate-700' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300'}`}
+          >
+            <div className="flex items-center gap-2"><Filter size={14}/> Filtrar Natureza ({selectedNatures.length})</div>
+            <ChevronDown size={14} className={`transition-transform ${showNatureFilter ? 'rotate-180' : ''}`}/>
+          </button>
 
-      <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
+            <input placeholder="Pesquisar..." className="w-full h-9 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-400" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
+        </div>
+
+        {showNatureFilter && (
+          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 animate-in slide-in-from-top-2">
+            <div className="flex justify-between items-center mb-3 px-1">
+               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Seletor de Natureza</span>
+               <div className="flex gap-4">
+                 <button onClick={() => setSelectedNatures(Array.from(NATURES))} className="text-[8px] font-black text-blue-600 uppercase hover:underline">Marcar Todos</button>
+                 <button onClick={() => setSelectedNatures([])} className="text-[8px] font-black text-slate-400 uppercase hover:underline">Limpar</button>
+               </div>
+            </div>
+            <div className="flex flex-wrap gap-2 max-h-36 overflow-y-auto custom-scrollbar p-1">
+              {NATURES.map(nature => (
+                <button
+                  key={nature}
+                  onClick={() => toggleNature(nature)}
+                  className={`px-3 py-1.5 rounded-lg text-[8px] font-black uppercase transition-all border ${
+                    selectedNatures.includes(nature) 
+                      ? 'bg-blue-600 text-white border-blue-500 shadow-md' 
+                      : 'bg-white text-slate-400 border-slate-200'
+                  }`}
+                >
+                  {nature}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1 bg-white border shadow-sm rounded-3xl overflow-hidden flex flex-col">
         <div className="flex-1 overflow-auto custom-scrollbar">
-          <table className="w-full border-collapse min-w-[800px]">
-            <thead className="sticky top-0 bg-slate-100 z-10 border-b">
+          <table className="w-full border-collapse min-w-[600px]">
+            <thead className="sticky top-0 bg-slate-50 border-b text-[9px] font-black uppercase text-slate-400 z-10">
               <tr>
-                <th 
-                  onClick={() => handleSort('dueDate')}
-                  className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
-                >
-                  <div className="flex items-center">Vencimento <SortIndicator column="dueDate"/></div>
-                </th>
-                <th 
-                  onClick={() => handleSort('supplier')}
-                  className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
-                >
-                  <div className="flex items-center">Fornecedor / Descrição <SortIndicator column="supplier"/></div>
-                </th>
-                <th 
-                  onClick={() => handleSort('nature')}
-                  className="px-6 py-4 text-left text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
-                >
-                  <div className="flex items-center">Natureza <SortIndicator column="nature"/></div>
-                </th>
-                <th 
-                  onClick={() => handleSort('value')}
-                  className="px-6 py-4 text-right text-[9px] font-black text-slate-500 uppercase cursor-pointer hover:bg-slate-200 transition-colors group"
-                >
-                  <div className="flex items-center justify-end">Valor <SortIndicator column="value"/></div>
-                </th>
-                <th className="px-6 py-4 text-center text-[9px] font-black text-slate-500 uppercase">Status</th>
-                <th className="px-6 py-4 text-center text-[9px] font-black text-slate-500 uppercase">Ações</th>
+                <th className="px-6 py-4 text-left">Vencimento</th>
+                <th className="px-6 py-4 text-left">Fornecedor / Detalhes</th>
+                <th className="px-6 py-4 text-left">Natureza</th>
+                <th className="px-6 py-4 text-right">Valor</th>
+                <th className="px-6 py-4 text-center w-28">Status</th>
+                <th className="px-6 py-4 text-center w-20">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {processedExpenses.map((exp) => {
-                const alertStatus = getVencimentoStatus(exp.dueDate, exp.status);
-                const bgClass = 
-                  alertStatus === 'late' ? 'bg-red-50/70 hover:bg-red-100/80 transition-colors' : 
-                  alertStatus === 'warning' ? 'bg-orange-50/50 hover:bg-orange-100/70 transition-colors' : 
-                  'bg-white hover:bg-slate-50/50 transition-colors';
-
-                return (
-                  <tr key={exp.id} className={bgClass}>
-                    <td className="px-6 py-4">
-                       <div className="flex items-center gap-2">
-                          {alertStatus !== 'none' && <AlertTriangle size={12} className={alertStatus === 'late' ? 'text-red-500' : 'text-orange-500'} />}
-                          <span className={`text-[10px] font-mono font-bold ${alertStatus === 'late' ? 'text-red-600' : 'text-slate-600'}`}>
-                            {exp.dueDate.split('-').reverse().join('/')}
-                          </span>
-                       </div>
-                    </td>
-                    <td className="px-6 py-4">
-                       <div className="text-[10px] font-black text-slate-800 uppercase truncate max-w-[200px]">{exp.supplier}</div>
-                       <div className="text-[8px] font-bold text-slate-400 uppercase truncate max-w-[200px]">{exp.description}</div>
-                    </td>
-                    <td className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase">
-                      <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-500 border border-slate-200">
-                        {exp.nature}
-                      </span>
-                    </td>
-                    <td className={`px-6 py-4 text-right font-mono font-black text-[11px] ${alertStatus === 'late' ? 'text-red-600' : 'text-slate-900'}`}>
-                      {formatMoney(exp.value)}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                       <button 
-                        onClick={() => { db.updateExpenseStatus(exp.id, exp.status === 'Pendente' ? 'Pago' : 'Pendente'); onSuccess(); }}
-                        className={`px-3 py-1 rounded-full text-[8px] font-black uppercase transition-all shadow-sm ${exp.status === 'Pago' ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-500 hover:bg-slate-300'}`}
-                       >
-                         {exp.status}
-                       </button>
-                    </td>
-                    <td className="px-6 py-4">
-                       <div className="flex justify-center gap-1">
-                          <button onClick={() => handleEdit(exp)} className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg"><Edit2 size={14}/></button>
-                          <button onClick={() => setDeletingId(exp.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={14}/></button>
-                       </div>
-                    </td>
-                  </tr>
-                );
-              })}
+              {processedExpenses.map((exp) => (
+                <tr key={exp.id} className={`hover:bg-slate-50/50 transition-colors ${editingId === exp.id ? 'bg-orange-50' : ''}`}>
+                  <td className="px-6 py-4 text-xs font-mono font-black text-slate-700">
+                    {exp.dueDate.split('-').reverse().slice(0,2).join('/')}
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="text-[11px] font-black text-slate-900 uppercase truncate max-w-[180px] leading-tight">{exp.supplier}</div>
+                    <div className="text-[9px] font-bold text-slate-400 truncate max-w-[180px] leading-tight mt-0.5">{exp.description}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className="text-[8px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-200 uppercase whitespace-nowrap shadow-xs">
+                      {exp.nature}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right font-mono font-black text-xs text-slate-900">{formatMoney(exp.value)}</td>
+                  <td className="px-6 py-4 text-center">
+                    <button 
+                      onClick={() => { db.updateExpenseStatus(exp.id, exp.status === 'Pendente' ? 'Pago' : 'Pendente'); onSuccess(); }} 
+                      className={`w-full py-2 rounded-xl text-[8px] font-black uppercase transition-all shadow-sm border ${exp.status === 'Pago' ? 'bg-green-500 border-green-400 text-white' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                    >
+                      {exp.status}
+                    </button>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center justify-center gap-2">
+                      <button 
+                        onClick={() => handleEdit(exp)} 
+                        className={`p-2 transition-all rounded-lg ${editingId === exp.id ? 'bg-orange-500 text-white' : 'text-slate-300 hover:text-blue-500'}`}
+                        title="Editar Conta"
+                      >
+                        <Edit2 size={16}/>
+                      </button>
+                      <button 
+                        onClick={() => setDeletingId(exp.id)} 
+                        className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                        title="Remover Título"
+                      >
+                        <Trash2 size={16}/>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
               {processedExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-[10px] font-black uppercase text-slate-300 tracking-widest italic">
-                    Nenhum título encontrado com os filtros atuais
+                  <td colSpan={6} className="py-24 text-center opacity-20">
+                    <Search size={48} className="mx-auto mb-2"/>
+                    <p className="text-xs font-black uppercase">Nenhum título encontrado</p>
                   </td>
                 </tr>
               )}
@@ -530,6 +471,12 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       </div>
     </div>
   );
+
+  function toggleNature(nature: string) {
+    setSelectedNatures(prev => 
+      prev.includes(nature) ? prev.filter(n => n !== nature) : [...prev, nature]
+    );
+  }
 };
 
 export default AccountsPayable;
