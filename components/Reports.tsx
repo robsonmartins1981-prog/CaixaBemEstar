@@ -91,14 +91,14 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const periodEntries = entries.filter(e => filterFn(e.date));
     const periodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate));
 
-    const filteredAuditItems = periodExpenses.filter(e => selectedNatures.includes(e.nature));
-
     const faturamento = {
       dinheiro: periodEntries.reduce((acc, e) => acc + e.cash, 0),
       pix: periodEntries.reduce((acc, e) => acc + e.pix, 0),
       debito: periodEntries.reduce((acc, e) => acc + e.debit, 0),
       credito: periodEntries.reduce((acc, e) => acc + e.credit, 0),
     };
+
+    const totalSangrias = periodEntries.reduce((acc, e) => acc + e.sangria, 0);
 
     const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito;
     const taxasMaquininha = (faturamento.debito * (rates.debit / 100)) + (faturamento.credito * (rates.credit / 100));
@@ -108,7 +108,9 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const lucroBruto = receitaLiquida - cmv;
     const despesasFixas = periodExpenses.filter(e => e.costType === 'Fixo').reduce((acc, e) => acc + e.value, 0);
     const despesasVariaveisOutras = periodExpenses.filter(e => e.costType === 'Variável' && e.nature !== 'Custo da Mercadoria Vendida (CMV)' && e.nature !== 'Impostos').reduce((acc, e) => acc + e.value, 0);
-    const lucroLiquido = lucroBruto - despesasFixas - despesasVariaveisOutras;
+    
+    // Lucro Líquido Real = Lucro Bruto - Despesas - Sangrias
+    const lucroLiquido = lucroBruto - despesasFixas - despesasVariaveisOutras - totalSangrias;
 
     const historyTrend = [];
     const trendEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
@@ -121,19 +123,20 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       const mBruto = mEntries.reduce((acc, e) => acc + (e.cash + e.pix + e.credit + e.debit), 0);
       const mTaxas = mEntries.reduce((acc, e) => acc + (e.debit * (rates.debit/100) + e.credit * (rates.credit/100)), 0);
       const mPago = mExpenses.reduce((acc, e) => acc + e.value, 0);
+      const mSangria = mEntries.reduce((acc, e) => acc + e.sangria, 0);
       
       historyTrend.push({
         name: d.toLocaleDateString('pt-BR', { month: 'short' }),
         fullName: d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
         receita: mBruto,
-        despesa: mTaxas + mPago,
-        lucro: mBruto - mTaxas - mPago
+        despesa: mTaxas + mPago + mSangria,
+        lucro: mBruto - (mTaxas + mPago + mSangria)
       });
     }
 
     const compositionMap: Record<string, number> = {};
     let totalSpent = 0;
-    filteredAuditItems.forEach(exp => {
+    periodExpenses.filter(e => selectedNatures.includes(e.nature)).forEach(exp => {
       compositionMap[exp.nature] = (compositionMap[exp.nature] || 0) + exp.value;
       totalSpent += exp.value;
     });
@@ -149,11 +152,11 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     return {
       dre: { 
         receitaBruta, faturamento, taxasMaquininha, impostos, receitaLiquida, 
-        cmv, lucroBruto, despesasFixas, despesasVariaveisOutras, lucroLiquido, 
+        cmv, lucroBruto, despesasFixas, despesasVariaveisOutras, totalSangrias, lucroLiquido, 
         historyTrend 
       },
       audit: { 
-        items: filteredAuditItems.sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+        items: periodExpenses.filter(e => selectedNatures.includes(e.nature)).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
         compositionData
       }
     };
@@ -259,6 +262,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
                 <div className="h-2 print:h-1"></div>
                 <DRERow label="(-) Despesas Administrativas Fixas" value={analytics.dre.despesasFixas} rb={rb} isNegative />
                 <DRERow label="(-) Outras Despesas Variáveis" value={analytics.dre.despesasVariaveisOutras} rb={rb} isNegative />
+                <DRERow label="(-) Sangrias de Caixa (Não classificadas)" value={analytics.dre.totalSangrias} rb={rb} isNegative />
                 <div className="h-4 print:h-2"></div>
                 <div className="bg-slate-900 text-white rounded-[1.5rem] p-6 md:p-8 flex flex-col md:flex-row justify-between items-center shadow-xl relative overflow-hidden print:bg-black print:p-6">
                   <div className="z-10 text-center md:text-left">

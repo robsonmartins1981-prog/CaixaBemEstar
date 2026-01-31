@@ -31,7 +31,10 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     const totalTaxas = filteredEntries.reduce((acc, e) => acc + (e.debit * (rates.debit / 100)) + (e.credit * (rates.credit / 100)), 0);
     const totalOutPaid = filteredExpenses.filter(e => e.status === 'Pago').reduce((acc, e) => acc + e.value, 0);
     const totalOutPending = filteredExpenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
+    const totalSangrias = filteredEntries.reduce((acc, e) => acc + e.sangria, 0);
     
+    // Lucro Líquido (Regime de Caixa): Faturamento - Taxas - Despesas Pagas
+    // Sangrias não são descontadas aqui pois presume-se que foram usadas para pagar despesas ou são pro-labore já listado
     const netBalance = totalIn - totalTaxas - totalOutPaid;
     const dailyAverage = totalIn / (new Set(filteredEntries.map(e => e.date)).size || 1);
 
@@ -48,7 +51,7 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     });
 
     return { 
-      totalIn, totalOutPaid, totalOutPending, netBalance, dailyAverage,
+      totalIn, totalOutPaid, totalOutPending, netBalance, dailyAverage, totalSangrias,
       chartTimeline: Object.values(timelineMap).sort((a, b) => a.date.localeCompare(b.date))
     };
   }, [entries, expenses, filterMonth, rates]);
@@ -80,10 +83,10 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
 
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2 shrink-0">
         <IndicatorCard title="Faturamento" value={stats.totalIn} color="border-green-100" valColor="text-green-600" />
-        <IndicatorCard title="Média Diária" value={stats.dailyAverage} color="border-emerald-100" valColor="text-emerald-600" />
+        <IndicatorCard title="Sangrias" value={stats.totalSangrias} color="border-rose-100" valColor="text-rose-500" />
         <IndicatorCard title="Custos Pagos" value={stats.totalOutPaid} color="border-blue-100" valColor="text-blue-600" />
         <IndicatorCard title="Pendentes" value={stats.totalOutPending} color="border-orange-100" valColor="text-orange-600" />
-        <IndicatorCard title="Líquido" value={stats.netBalance} color="border-slate-200" valColor="text-slate-900" isMain />
+        <IndicatorCard title="Lucro Líquido" value={stats.netBalance} color="border-slate-200" valColor="text-slate-900" isMain />
       </div>
 
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col rounded-2xl overflow-hidden min-h-[200px]">

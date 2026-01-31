@@ -42,8 +42,9 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
+// Sanitização robusta para precisão financeira
 const sanitizeNumber = (val: any): number => {
-  if (typeof val === 'number') return isFinite(val) ? val : 0;
+  if (typeof val === 'number') return isFinite(val) ? Number(val.toFixed(2)) : 0;
   if (!val) return 0;
   const s = String(val)
     .replace('R$', '')
@@ -52,7 +53,7 @@ const sanitizeNumber = (val: any): number => {
     .replace(',', '.')
     .trim();
   const n = parseFloat(s);
-  return isFinite(n) ? n : 0;
+  return isFinite(n) ? Number(n.toFixed(2)) : 0;
 };
 
 export const db = {
