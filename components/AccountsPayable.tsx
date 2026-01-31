@@ -6,7 +6,7 @@ import { NATURES, COST_TYPES } from '../constants.tsx';
 import { 
   Plus, Trash2, Receipt, List, CheckCircle, Clock, 
   Calendar as CalendarIcon, DollarSign, User, Edit2, X, Layers, Timer, ChevronDown, Search, Filter, AlertTriangle, ArrowUpDown, ChevronUp, Repeat,
-  CalendarDays
+  CheckSquare, Square
 } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal.tsx';
 
@@ -32,6 +32,10 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'dueDate', direction: 'asc' });
   const [searchTerm, setSearchTerm] = useState('');
   
+  // Novo estado para filtro de natureza
+  const [selectedNatures, setSelectedNatures] = useState<string[]>(Array.from(NATURES));
+  const [showNatureFilter, setShowNatureFilter] = useState(false);
+
   const [isInstallment, setIsInstallment] = useState(false);
   const [installmentsCount, setInstallmentsCount] = useState(2);
   const [intervalDays, setIntervalDays] = useState(30);
@@ -152,16 +156,30 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     setSortConfig({ key, direction });
   };
 
+  const toggleNature = (nature: string) => {
+    setSelectedNatures(prev => 
+      prev.includes(nature) 
+        ? prev.filter(n => n !== nature) 
+        : [...prev, nature]
+    );
+  };
+
+  const selectAllNatures = () => setSelectedNatures(Array.from(NATURES));
+  const deselectAllNatures = () => setSelectedNatures([]);
+
   const processedExpenses = useMemo(() => {
     let filtered = expenses.filter(exp => {
-      const vStatus = getVencimentoStatus(exp.dueDate, exp.status);
+      // Filtro de Busca
       const searchMatch = 
         exp.supplier.toLowerCase().includes(searchTerm.toLowerCase()) || 
         exp.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
         exp.nature.toLowerCase().includes(searchTerm.toLowerCase());
-
       if (!searchMatch) return false;
 
+      // Filtro de Natureza (Categoria)
+      if (!selectedNatures.includes(exp.nature)) return false;
+
+      // Filtro de Status / Vencimento
       const today = new Date();
       today.setHours(0,0,0,0);
       const limit7Days = new Date(today);
@@ -196,7 +214,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     }
 
     return filtered;
-  }, [expenses, filterStatus, sortConfig, searchTerm]);
+  }, [expenses, filterStatus, sortConfig, searchTerm, selectedNatures]);
 
   const pendingTotal = expenses.filter(e => e.status === 'Pendente').reduce((acc, curr) => acc + curr.value, 0);
   const paidTotal = expenses.filter(e => e.status === 'Pago').reduce((acc, curr) => acc + curr.value, 0);
@@ -363,17 +381,61 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
             </button>
           ))}
         </div>
-        <div className="relative w-full xl:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
-          <input 
-            type="text"
-            placeholder="Buscar por fornecedor ou descrição..."
-            className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500"
-            value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
-          />
+
+        <div className="flex items-center gap-2 w-full xl:w-auto">
+          <button 
+            onClick={() => setShowNatureFilter(!showNatureFilter)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all border ${
+              showNatureFilter ? 'bg-slate-800 text-white border-slate-700 shadow-md' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <Filter size={14}/> Naturezas ({selectedNatures.length})
+          </button>
+
+          <div className="relative flex-1 xl:w-80">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14}/>
+            <input 
+              type="text"
+              placeholder="Buscar fornecedor ou descrição..."
+              className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-200 rounded-xl text-[10px] font-bold outline-none focus:border-blue-500"
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+            />
+          </div>
         </div>
       </div>
+
+      {/* Seção Expandível de Filtro por Natureza */}
+      {showNatureFilter && (
+        <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-inner animate-in slide-in-from-top-2 duration-300 shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+              <Layers size={14} className="text-blue-500"/> Filtrar por Categorias
+            </h4>
+            <div className="flex gap-2">
+              <button onClick={selectAllNatures} className="text-[8px] font-black uppercase text-blue-600 hover:underline">Marcar Todas</button>
+              <span className="text-slate-300">|</span>
+              <button onClick={deselectAllNatures} className="text-[8px] font-black uppercase text-slate-400 hover:underline">Limpar</button>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {NATURES.map(nature => (
+              <button
+                key={nature}
+                onClick={() => toggleNature(nature)}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[9px] font-black uppercase transition-all ${
+                  selectedNatures.includes(nature) 
+                    ? 'bg-blue-50 text-blue-700 border-blue-200 shadow-sm' 
+                    : 'bg-white text-slate-400 border-slate-100 opacity-60'
+                }`}
+              >
+                {selectedNatures.includes(nature) ? <CheckSquare size={12}/> : <Square size={12}/>}
+                {nature}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 bg-white border border-slate-200 shadow-sm flex flex-col overflow-hidden rounded-2xl">
         <div className="flex-1 overflow-auto custom-scrollbar">
@@ -430,7 +492,11 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                        <div className="text-[10px] font-black text-slate-800 uppercase truncate max-w-[200px]">{exp.supplier}</div>
                        <div className="text-[8px] font-bold text-slate-400 uppercase truncate max-w-[200px]">{exp.description}</div>
                     </td>
-                    <td className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase">{exp.nature}</td>
+                    <td className="px-6 py-4 text-[9px] font-black text-slate-400 uppercase">
+                      <span className="px-2 py-0.5 bg-slate-100 rounded text-slate-500 border border-slate-200">
+                        {exp.nature}
+                      </span>
+                    </td>
                     <td className={`px-6 py-4 text-right font-mono font-black text-[11px] ${alertStatus === 'late' ? 'text-red-600' : 'text-slate-900'}`}>
                       {formatMoney(exp.value)}
                     </td>
