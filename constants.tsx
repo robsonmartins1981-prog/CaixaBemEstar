@@ -11,7 +11,7 @@ export const COLORS = {
 };
 
 export const NATURES = [
-  'Custo da Mercadoria Vendida (CMV)', 
+  'Custo da Mercadoria Vendida', 
   'Frete/Logística',
   'Embalagens', 
   'Impostos', 

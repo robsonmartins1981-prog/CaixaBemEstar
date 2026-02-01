@@ -1,15 +1,15 @@
 
 import React, { useMemo, useState } from 'react';
-import { CashEntry, Expense, CardRates, ExpenseNature } from '../types.ts';
+import { CashEntry, Expense } from '../types.ts';
 import { db } from '../services/db.ts';
 import { NATURES } from '../constants.tsx';
 import { 
-  ChevronLeft, ChevronRight, PieChart, ClipboardList, TrendingUp, FileDown, 
-  ArrowUpRight, Info, LineChart as LineChartIcon, BarChart3, Filter, CheckCircle2, Circle
+  ChevronLeft, ChevronRight, PieChart, ClipboardList, FileDown, 
+  BarChart3, Filter, CheckCircle2, Circle, Receipt, Clock
 } from 'lucide-react';
 import { 
   CartesianGrid, Tooltip, ResponsiveContainer, 
-  LineChart, Line, XAxis, YAxis, ReferenceLine, BarChart, Bar, Cell
+  XAxis, YAxis, BarChart, Bar, Cell
 } from 'recharts';
 
 interface ReportsProps {
@@ -30,19 +30,19 @@ const CustomTooltip = ({ active, payload }: any) => {
   if (active && payload && payload.length) {
     const data = payload[0].payload;
     return (
-      <div className="bg-white p-4 border border-slate-200 shadow-2xl rounded-2xl min-w-[200px]">
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 border-b pb-2">
-          {data.fullName || data.nature}
+      <div className="bg-white p-5 border border-slate-200 shadow-2xl rounded-3xl min-w-[250px]">
+        <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-4 border-b pb-3">
+          {data.nature}
         </p>
-        <div className="space-y-2">
+        <div className="space-y-3">
           <div className="flex justify-between items-center gap-4">
-            <span className="text-[9px] font-bold text-slate-500 uppercase">Valor:</span>
-            <span className="text-[11px] font-mono font-black text-slate-900">{formatMoney(data.value || data.lucro)}</span>
+            <span className="text-[11px] font-black text-slate-500 uppercase">Valor Consolidado:</span>
+            <span className="text-[13px] font-mono font-black text-slate-900">{formatMoney(data.value)}</span>
           </div>
           {data.percent && (
             <div className="flex justify-between items-center gap-4">
-              <span className="text-[9px] font-bold text-slate-400 uppercase">Representação:</span>
-              <span className="text-[10px] font-mono font-black text-blue-600">{formatPercent(data.percent)}</span>
+              <span className="text-[11px] font-black text-slate-400 uppercase">Proporção:</span>
+              <span className="text-[12px] font-mono font-black text-blue-600">{formatPercent(data.percent)}</span>
             </div>
           )}
         </div>
@@ -56,7 +56,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   const [periodType, setPeriodType] = useState<PeriodType>('Mensal');
   const [reportView, setReportView] = useState<ReportView>('dre');
   const [baseDate, setBaseDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [selectedNatures, setSelectedNatures] = useState<string[]>(NATURES as unknown as string[]);
+  const [selectedNatures, setSelectedNatures] = useState<string[]>(Array.from(NATURES));
   
   const [startDate, setStartDate] = useState<string>(() => {
     const d = new Date();
@@ -65,8 +65,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   });
   const [endDate, setEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
   
-  const [rates] = useState<CardRates>(db.getCardRates());
-
   const toggleNature = (nature: string) => {
     setSelectedNatures(prev => 
       prev.includes(nature) ? prev.filter(n => n !== nature) : [...prev, nature]
@@ -78,9 +76,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     if (isNaN(selectedDate.getTime())) return null;
     
     const filterFn = (itemDate: string) => {
-      if (periodType === 'Custom') {
-        return itemDate >= startDate && itemDate <= endDate;
-      }
+      if (periodType === 'Custom') return itemDate >= startDate && itemDate <= endDate;
       const d = new Date(itemDate + 'T12:00:00');
       if (periodType === 'Diário') return d.toDateString() === selectedDate.toDateString();
       if (periodType === 'Mensal') return d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
@@ -89,78 +85,43 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     };
 
     const periodEntries = entries.filter(e => filterFn(e.date));
-    const periodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate));
+    const paidPeriodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate));
+    
+    // O usuário solicitou que Obrigações Pendentes incluam valores de meses passados (Total Geral Pendente Global)
+    const totalOutPending = expenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
 
     const faturamento = {
-      dinheiro: periodEntries.reduce((acc, e) => acc + e.cash, 0),
-      pix: periodEntries.reduce((acc, e) => acc + e.pix, 0),
-      debito: periodEntries.reduce((acc, e) => acc + e.debit, 0),
-      credito: periodEntries.reduce((acc, e) => acc + e.credit, 0),
+      dinheiro: periodEntries.reduce((acc, e) => acc + (e.cash || 0), 0),
+      pix: periodEntries.reduce((acc, e) => acc + (e.pix || 0), 0),
+      debito: periodEntries.reduce((acc, e) => acc + (e.debit || 0), 0),
+      credito: periodEntries.reduce((acc, e) => acc + (e.credit || 0), 0),
     };
-
-    const totalSangrias = periodEntries.reduce((acc, e) => acc + e.sangria, 0);
-
     const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito;
-    const taxasMaquininha = (faturamento.debito * (rates.debit / 100)) + (faturamento.credito * (rates.credit / 100));
-    const impostos = periodExpenses.filter(e => e.nature === 'Impostos').reduce((acc, e) => acc + e.value, 0);
-    const receitaLiquida = receitaBruta - taxasMaquininha - impostos;
-    const cmv = periodExpenses.filter(e => e.nature === 'Custo da Mercadoria Vendida (CMV)').reduce((acc, e) => acc + e.value, 0);
-    const lucroBruto = receitaLiquida - cmv;
-    const despesasFixas = periodExpenses.filter(e => e.costType === 'Fixo').reduce((acc, e) => acc + e.value, 0);
-    const despesasVariaveisOutras = periodExpenses.filter(e => e.costType === 'Variável' && e.nature !== 'Custo da Mercadoria Vendida (CMV)' && e.nature !== 'Impostos').reduce((acc, e) => acc + e.value, 0);
     
-    // Lucro Líquido Real = Lucro Bruto - Despesas - Sangrias
-    const lucroLiquido = lucroBruto - despesasFixas - despesasVariaveisOutras - totalSangrias;
+    const custoOperacional = paidPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
+    const totalSangrias = periodEntries.reduce((acc, e) => acc + (e.sangria || 0), 0);
+    const custoTotalReal = custoOperacional + totalSangrias;
+    
+    const lucroLiquido = receitaBruta - custoTotalReal;
 
-    const historyTrend = [];
-    const trendEnd = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
-    for (let i = 11; i >= 0; i--) {
-      const d = new Date(trendEnd.getFullYear(), trendEnd.getMonth() - i, 1);
-      const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      const mEntries = entries.filter(e => e.date.startsWith(mKey));
-      const mExpenses = expenses.filter(e => e.status === 'Pago' && e.dueDate.startsWith(mKey));
-      
-      const mBruto = mEntries.reduce((acc, e) => acc + (e.cash + e.pix + e.credit + e.debit), 0);
-      const mTaxas = mEntries.reduce((acc, e) => acc + (e.debit * (rates.debit/100) + e.credit * (rates.credit/100)), 0);
-      const mPago = mExpenses.reduce((acc, e) => acc + e.value, 0);
-      const mSangria = mEntries.reduce((acc, e) => acc + e.sangria, 0);
-      
-      historyTrend.push({
-        name: d.toLocaleDateString('pt-BR', { month: 'short' }),
-        fullName: d.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }),
-        receita: mBruto,
-        despesa: mTaxas + mPago + mSangria,
-        lucro: mBruto - (mTaxas + mPago + mSangria)
-      });
-    }
-
+    const allPeriodExpenses = expenses.filter(e => filterFn(e.dueDate));
+    const totalObrigacoes = allPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
     const compositionMap: Record<string, number> = {};
-    let totalSpent = 0;
-    periodExpenses.filter(e => selectedNatures.includes(e.nature)).forEach(exp => {
+    let totalFiltered = 0;
+    allPeriodExpenses.filter(e => selectedNatures.includes(e.nature)).forEach(exp => {
       compositionMap[exp.nature] = (compositionMap[exp.nature] || 0) + exp.value;
-      totalSpent += exp.value;
+      totalFiltered += exp.value;
     });
 
     const compositionData = Object.entries(compositionMap)
-      .map(([nature, value]) => ({ 
-        nature, 
-        value, 
-        percent: totalSpent > 0 ? value / totalSpent : 0 
-      }))
+      .map(([nature, value]) => ({ nature, value, percent: totalFiltered > 0 ? value / totalFiltered : 0 }))
       .sort((a, b) => b.value - a.value);
 
     return {
-      dre: { 
-        receitaBruta, faturamento, taxasMaquininha, impostos, receitaLiquida, 
-        cmv, lucroBruto, despesasFixas, despesasVariaveisOutras, totalSangrias, lucroLiquido, 
-        historyTrend 
-      },
-      audit: { 
-        items: periodExpenses.filter(e => selectedNatures.includes(e.nature)).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
-        compositionData
-      }
+      dre: { receitaBruta, faturamento, custoOperacional, totalSangrias, custoTotalReal, lucroLiquido, totalOutPending },
+      audit: { items: allPeriodExpenses.filter(e => selectedNatures.includes(e.nature)).sort((a, b) => a.dueDate.localeCompare(b.dueDate)), compositionData, totalObrigacoes }
     };
-  }, [entries, expenses, periodType, baseDate, rates, startDate, endDate, selectedNatures]);
+  }, [entries, expenses, periodType, baseDate, startDate, endDate, selectedNatures]);
 
   const handleAdjustDate = (delta: number) => {
     if (periodType === 'Custom') return;
@@ -172,253 +133,183 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   };
 
   const formattedLabel = () => {
-    if (periodType === 'Custom') {
-      const s = new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR');
-      const e = new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR');
-      return `${s} à ${e}`;
-    }
+    if (periodType === 'Custom') return `${new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR')} à ${new Date(endDate + 'T12:00:00').toLocaleDateString('pt-BR')}`;
     const d = new Date(baseDate + 'T12:00:00');
     if (periodType === 'Diário') return d.toLocaleDateString('pt-BR');
     if (periodType === 'Mensal') return d.toLocaleDateString('pt-BR', {month: 'long', year: 'numeric'});
     return d.getFullYear().toString();
   };
 
-  const handlePrintPDF = () => {
-    setReportView('dre');
-    setTimeout(() => { window.print(); }, 500);
-  };
+  const dreTitleLabel = useMemo(() => {
+    if (periodType === 'Custom') return `DRE - PERSONALIZADO`;
+    const d = new Date(baseDate + 'T12:00:00');
+    if (periodType === 'Diário') return `DRE - ${d.toLocaleDateString('pt-BR').toUpperCase()}`;
+    if (periodType === 'Mensal') {
+      const month = d.toLocaleDateString('pt-BR', { month: 'long' }).toUpperCase();
+      const year = d.getFullYear();
+      return `DRE - ${month} - ${year}`;
+    }
+    return `DRE - ANUAL - ${d.getFullYear()}`;
+  }, [periodType, baseDate]);
 
   if (!analytics) return null;
-
   const rb = analytics.dre.receitaBruta || 1;
 
   return (
-    <div className="flex-1 flex flex-col gap-4 overflow-hidden h-full print:block print:bg-white bg-[#F8FAFC]">
-      <div className="bg-white border-b border-slate-200 p-3 flex flex-col xl:flex-row items-center justify-between gap-4 shrink-0 no-print z-20 shadow-sm">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+    <div className="flex-1 flex flex-col gap-5 overflow-hidden h-full print:block print:bg-white bg-[#F8FAFC]">
+      <div className="bg-white border-b border-slate-200 p-4 flex flex-col xl:flex-row items-center justify-between gap-5 shrink-0 no-print z-20 shadow-sm">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
             {(['Diário', 'Mensal', 'Anual', 'Custom'] as PeriodType[]).map(p => (
-              <button 
-                key={p} 
-                onClick={() => setPeriodType(p)} 
-                className={`px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${periodType === p ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                {p}
-              </button>
+              <button key={p} onClick={() => setPeriodType(p)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${periodType === p ? 'bg-white text-slate-800 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}>{p}</button>
             ))}
           </div>
-          
-          <div className="flex items-center gap-2">
-             <button onClick={() => handleAdjustDate(-1)} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"><ChevronLeft size={14}/></button>
-             <div className="px-4 py-2 bg-slate-900 text-white rounded-lg font-mono font-bold text-[10px] min-w-[140px] text-center uppercase tracking-widest shadow-md">
-                {formattedLabel()}
-             </div>
-             <button onClick={() => handleAdjustDate(1)} className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors shadow-sm"><ChevronRight size={14}/></button>
+          <div className="flex items-center gap-2.5">
+             <button onClick={() => handleAdjustDate(-1)} className="p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"><ChevronLeft size={20}/></button>
+             <div className="px-6 py-3 bg-slate-900 text-white rounded-[1.2rem] font-mono font-bold text-[11px] min-w-[180px] text-center uppercase shadow-lg">{formattedLabel()}</div>
+             <button onClick={() => handleAdjustDate(1)} className="p-3 bg-white border border-slate-200 rounded-xl hover:bg-slate-50"><ChevronRight size={20}/></button>
           </div>
-
-          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button onClick={() => setReportView('dre')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'dre' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400'}`}><PieChart size={14}/> DRE</button>
-            <button onClick={() => setReportView('audit')} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${reportView === 'audit' ? 'bg-white text-emerald-600 shadow-sm' : 'text-slate-400'}`}><ClipboardList size={14}/> Auditoria</button>
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
+            <button onClick={() => setReportView('dre')} className={`flex items-center gap-3 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${reportView === 'dre' ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400'}`}><PieChart size={18}/> DRE Operacional</button>
+            <button onClick={() => setReportView('audit')} className={`flex items-center gap-3 px-5 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all ${reportView === 'audit' ? 'bg-white text-emerald-600 shadow-md' : 'text-slate-400'}`}><ClipboardList size={18}/> Auditoria</button>
           </div>
         </div>
-
-        <button 
-          onClick={handlePrintPDF}
-          className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-700 active:scale-95 transition-all shadow-lg"
-        >
-          <FileDown size={14}/> Imprimir DRE
-        </button>
+        <button onClick={() => window.print()} className="flex items-center gap-3 px-8 py-3 bg-blue-600 text-white rounded-2xl text-[11px] font-black uppercase shadow-xl hover:bg-blue-700 active:scale-95 transition-all"><FileDown size={20}/> Gerar PDF</button>
       </div>
 
-      <div className="flex-1 overflow-auto custom-scrollbar p-2 lg:p-4 print:p-0 print:overflow-visible bg-[#F8FAFC] print:bg-white">
+      <div className="flex-1 overflow-auto custom-scrollbar p-3 lg:p-6 print:p-0 bg-[#F8FAFC] print:bg-white print:overflow-visible">
         {reportView === 'dre' ? (
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white border border-slate-200 shadow-xl rounded-[2.5rem] overflow-hidden print:border-0 print:shadow-none print:max-w-none print:rounded-none">
-              <div className="p-6 md:p-8 border-b border-slate-100 bg-[#F1F5F9]/30 print:p-4 print:pb-2">
-                 <div className="flex justify-between items-end">
-                    <div>
-                      <h3 className="text-3xl md:text-4xl font-black text-slate-800 uppercase tracking-tighter leading-none mb-1">D.R.E</h3>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Demonstrativo de Resultado do Exercício</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none">Período de Referência</p>
-                      <p className="text-base font-mono font-black text-slate-900 uppercase">{formattedLabel()}</p>
-                    </div>
-                 </div>
+          <div className="max-w-4xl mx-auto animate-in fade-in duration-500 pb-10 print:pb-0 print:m-0 print:max-w-none">
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm print:border-none print:shadow-none print:rounded-none">
+              <div className="p-3 border-b border-slate-100 bg-slate-50/30 text-center print:bg-white print:border-b-2 print:border-slate-800">
+                 <h3 className="text-lg font-black text-slate-800 uppercase tracking-tighter leading-none print:text-2xl">{dreTitleLabel}</h3>
               </div>
+              <div className="p-6 lg:p-10 space-y-2 print:p-4 print:space-y-1">
+                
+                {/* BLOCO DE ENTRADAS */}
+                <div className="space-y-1 print:space-y-0">
+                  <DRETitle label="1. RECEITA OPERACIONAL BRUTA" value={analytics.dre.receitaBruta} color="text-slate-900" border="border-slate-900" />
+                  <DRERow label="(+) Movimento em Dinheiro" value={analytics.dre.faturamento.dinheiro} rb={rb} />
+                  <DRERow label="(+) Movimento via PIX" value={analytics.dre.faturamento.pix} rb={rb} />
+                  <DRERow label="(+) Vendas em Débito" value={analytics.dre.faturamento.debito} rb={rb} />
+                  <DRERow label="(+) Vendas em Crédito" value={analytics.dre.faturamento.credito} rb={rb} />
+                </div>
 
-              <div className="p-6 md:p-10 space-y-1.5 print:p-4 print:space-y-1">
-                <DRETitle label="1. RECEITA OPERACIONAL BRUTA" value={analytics.dre.receitaBruta} />
-                <DRERow label="(+) Vendas em Dinheiro" value={analytics.dre.faturamento.dinheiro} rb={rb} />
-                <DRERow label="(+) Recebimentos PIX" value={analytics.dre.faturamento.pix} rb={rb} />
-                <DRERow label="(+) Vendas em Cartão (Crédito/Débito)" value={analytics.dre.faturamento.debito + analytics.dre.faturamento.credito} rb={rb} />
-                <div className="h-2 print:h-1"></div>
-                <DRERow label="(-) Taxas Adm. de Cartão" value={analytics.dre.taxasMaquininha} rb={rb} isNegative />
-                <DRERow label="(-) Impostos sobre Vendas" value={analytics.dre.impostos} rb={rb} isNegative />
-                <DRESubtotal label="(=) RECEITA OPERACIONAL LÍQUIDA" value={analytics.dre.receitaLiquida} rb={rb} />
-                <div className="h-2 print:h-1"></div>
-                <DRERow label="(-) Custo Mercadoria Vendida (CMV)" value={analytics.dre.cmv} rb={rb} isNegative />
-                <DRESubtotal label="(=) MARGEM DE CONTRIBUIÇÃO" value={analytics.dre.lucroBruto} rb={rb} highlight />
-                <div className="h-2 print:h-1"></div>
-                <DRERow label="(-) Despesas Administrativas Fixas" value={analytics.dre.despesasFixas} rb={rb} isNegative />
-                <DRERow label="(-) Outras Despesas Variáveis" value={analytics.dre.despesasVariaveisOutras} rb={rb} isNegative />
-                <DRERow label="(-) Sangrias de Caixa (Não classificadas)" value={analytics.dre.totalSangrias} rb={rb} isNegative />
                 <div className="h-4 print:h-2"></div>
-                <div className="bg-slate-900 text-white rounded-[1.5rem] p-6 md:p-8 flex flex-col md:flex-row justify-between items-center shadow-xl relative overflow-hidden print:bg-black print:p-6">
-                  <div className="z-10 text-center md:text-left">
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1 block">Resultado Final</span>
-                    <h4 className="text-3xl font-black uppercase tracking-tighter italic">LUCRO LÍQUIDO</h4>
-                    <div className="mt-1 flex items-center gap-2 px-2 py-0.5 bg-white/10 rounded inline-flex">
-                      <span className="text-[9px] font-black text-slate-200 uppercase">Margem:</span>
-                      <span className="text-[11px] font-mono font-black text-emerald-400">
-                        {formatPercent(analytics.dre.lucroLiquido / rb)}
-                      </span>
+
+                {/* BLOCO DE SAÍDAS */}
+                <div className="space-y-1 print:space-y-0">
+                  <DRETitle label="2. CUSTO OPERACIONAL (DESEMBOLSO)" value={analytics.dre.custoTotalReal} color="text-rose-600" border="border-rose-200" />
+                  <DRERow label="(-) Pagamentos de Contas" value={analytics.dre.custoOperacional} rb={rb} isNegative />
+                  <DRERow label="(-) Sangrias do Período" value={analytics.dre.totalSangrias} rb={rb} isNegative />
+                </div>
+
+                <div className="h-6 print:h-4"></div>
+
+                {/* RESULTADO FINAL - REATORADO PARA FIXAR COR NA IMPRESSÃO */}
+                <div 
+                  className="rounded-xl p-4 lg:p-5 flex flex-row justify-between items-center overflow-hidden border-l-8 border-green-500"
+                  style={{ 
+                    backgroundColor: '#0f172a', 
+                    color: '#ffffff',
+                    WebkitPrintColorAdjust: 'exact',
+                    printColorAdjust: 'exact'
+                  }}
+                >
+                  <div>
+                    <h4 className="text-lg font-black uppercase tracking-tighter italic print:text-xl">LUCRO LÍQUIDO</h4>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[9px] font-black text-slate-400 uppercase">Margem Operacional:</span>
+                      <span className="text-[11px] font-mono font-black text-emerald-400">{formatPercent(analytics.dre.lucroLiquido / rb)}</span>
                     </div>
                   </div>
-                  <div className="z-10 mt-4 md:mt-0 text-center md:text-right">
-                     <p className={`text-5xl md:text-6xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-emerald-400' : 'text-rose-500'}`}>
-                      {formatMoney(analytics.dre.lucroLiquido)}
-                     </p>
+                  <div className="text-right">
+                     <p className={`text-2xl lg:text-3xl font-mono font-black tracking-tighter ${analytics.dre.lucroLiquido >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatMoney(analytics.dre.lucroLiquido)}</p>
                   </div>
                 </div>
-              </div>
-            </div>
 
-            <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-xl no-print print:hidden">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
-                    <LineChartIcon size={24}/>
+                {/* OBRIGAÇÕES PENDENTES (GLOBAL) */}
+                <div 
+                  className="rounded-xl p-4 flex flex-row justify-between items-center gap-4 mt-4 border border-orange-100"
+                  style={{ 
+                    backgroundColor: '#fff7ed',
+                    WebkitPrintColorAdjust: 'exact',
+                    printColorAdjust: 'exact'
+                  }}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 bg-orange-500 text-white rounded-lg flex items-center justify-center shadow-md print:bg-orange-500 print:text-white"><Clock size={18}/></div>
+                    <div>
+                      <h4 className="text-[11px] font-black text-orange-900 uppercase tracking-widest leading-none mb-0.5">Total Geral de Pendências</h4>
+                      <p className="text-[8px] font-bold text-orange-400 uppercase tracking-widest italic leading-none">Inadimplência acumulada (Meses Passados + Atual)</p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest leading-none mb-1">Tendência de Lucratividade</h4>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Análise consolidada dos últimos 12 meses</p>
+                  <div className="text-right">
+                    <p className="text-xl lg:text-2xl font-mono font-black text-orange-600">{formatMoney(analytics.dre.totalOutPending)}</p>
                   </div>
                 </div>
-              </div>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={analytics.dre.historyTrend} margin={{ top: 10, right: 20, left: 10, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
-                    <XAxis dataKey="name" fontSize={10} fontWeight="900" axisLine={false} tickLine={false} dy={10} tick={{ fill: '#94a3b8' }} />
-                    <YAxis fontSize={9} fontWeight="900" axisLine={false} tickLine={false} tickFormatter={(v) => `R$ ${v/1000}k`} tick={{ fill: '#94a3b8' }} />
-                    <Tooltip content={<CustomTooltip />} />
-                    <ReferenceLine y={0} stroke="#cbd5e1" strokeWidth={2} />
-                    <Line type="monotone" dataKey="lucro" stroke="#2563eb" strokeWidth={4} dot={{ r: 6, fill: '#2563eb', strokeWidth: 3, stroke: '#fff' }} activeDot={{ r: 8, fill: '#1d4ed8', strokeWidth: 0 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+
+                {/* NOTA DE RODAPÉ PARA IMPRESSÃO */}
+                <div className="hidden print:block pt-6 border-t border-slate-100 mt-6">
+                  <p className="text-[8px] text-slate-400 uppercase font-black text-center tracking-[0.4em]">Relatório gerado em {new Date().toLocaleString('pt-BR')} • Sistema Bem Estar Controle</p>
+                </div>
+
               </div>
             </div>
           </div>
         ) : (
-          <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-             <div className="bg-white border border-slate-200 p-6 rounded-[2rem] shadow-sm space-y-4">
-                <div className="flex items-center gap-2">
-                  <Filter size={14} className="text-slate-400"/>
-                  <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Filtro de Natureza de Gastos</h4>
+          <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+             <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm flex items-center gap-6">
+                <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0"><Receipt size={32}/></div>
+                <div>
+                   <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Geral de Obrigações (Competência)</p>
+                   <p className="text-3xl font-mono font-black text-slate-900">{formatMoney(analytics.audit.totalObrigacoes)}</p>
+                   <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Todas as contas (Pagas e Pendentes)</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+             </div>
+
+             <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm space-y-6">
+                <div className="flex items-center gap-3"><Filter size={20} className="text-slate-400"/><h4 className="text-[12px] font-black text-slate-500 uppercase tracking-[0.2em]">Filtros por Natureza</h4></div>
+                <div className="flex flex-wrap gap-3">
                    {NATURES.map(nature => (
-                     <button
-                        key={nature}
-                        onClick={() => toggleNature(nature)}
-                        className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-[9px] font-black uppercase transition-all ${
-                          selectedNatures.includes(nature) 
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 shadow-sm' 
-                            : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'
-                        }`}
-                     >
-                       {selectedNatures.includes(nature) ? <CheckCircle2 size={12}/> : <Circle size={12}/>}
-                       {nature}
-                     </button>
+                     <button key={nature} onClick={() => toggleNature(nature)} className={`flex items-center gap-3 px-5 py-2.5 rounded-2xl border text-[11px] font-black uppercase transition-all shadow-sm ${selectedNatures.includes(nature) ? 'bg-emerald-50 text-emerald-700 border-emerald-200 ring-2 ring-emerald-100' : 'bg-white text-slate-400 border-slate-100 hover:bg-slate-50'}`}>{selectedNatures.includes(nature) ? <CheckCircle2 size={16}/> : <Circle size={16}/>}{nature}</button>
                    ))}
                 </div>
              </div>
 
-             <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-xl">
-                <div className="flex items-center gap-4 mb-8">
-                  <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner">
-                    <BarChart3 size={24}/>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest leading-none mb-1">Composição dos Gastos</h4>
-                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Distribuição por natureza no período selecionado</p>
-                  </div>
-                </div>
-
-                <div className="h-80 w-full">
+             <div className="bg-white border border-slate-200 p-10 rounded-2xl shadow-sm">
+                <div className="flex items-center gap-5 mb-10"><div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner"><BarChart3 size={28}/></div><div><h4 className="text-lg font-black text-slate-800 uppercase tracking-widest leading-none mb-2">Distribuição de Gastos</h4><p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Peso de cada natureza no total do período</p></div></div>
+                <div className="h-96 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={analytics.audit.compositionData} layout="vertical" margin={{ top: 0, right: 30, left: 100, bottom: 0 }}>
+                    <BarChart data={analytics.audit.compositionData} layout="vertical" margin={{ left: 120 }}>
                       <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#F1F5F9" />
                       <XAxis type="number" hide />
-                      <YAxis 
-                        dataKey="nature" 
-                        type="category" 
-                        fontSize={9} 
-                        fontWeight="900" 
-                        axisLine={false} 
-                        tickLine={false} 
-                        width={100}
-                        tick={{ fill: '#64748b' }}
-                      />
-                      <Tooltip content={<CustomTooltip />} cursor={{fill: 'transparent'}} />
-                      <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={20}>
-                        {analytics.audit.compositionData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={index === 0 ? '#10b981' : '#334155'} />
-                        ))}
-                      </Bar>
+                      <YAxis dataKey="nature" type="category" fontSize={11} fontWeight="900" axisLine={false} tickLine={false} width={120} tick={{ fill: '#475569' }} />
+                      <Tooltip content={<CustomTooltip />} cursor={{fill: 'rgba(241, 245, 249, 0.5)'}} />
+                      <Bar dataKey="value" radius={[0, 8, 8, 0]} barSize={24} fill="#475569" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
              </div>
 
-             <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xl">
-                <div className="p-6 border-b border-slate-100 flex items-center gap-4 bg-slate-50/50">
-                  <div className="w-10 h-10 bg-emerald-500 text-white rounded-xl flex items-center justify-center shadow-lg">
-                    <ClipboardList size={20}/>
-                  </div>
-                  <div>
-                     <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Detalhamento Auditado</h3>
-                     <p className="text-[9px] font-bold text-slate-400 uppercase">Lista de pagamentos efetuados no período com filtros aplicados</p>
-                  </div>
+             <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                <div className="p-8 border-b border-slate-100 flex items-center gap-5 bg-slate-50/50">
+                  <div className="w-12 h-12 bg-emerald-500 text-white rounded-2xl flex items-center justify-center shadow-md"><ClipboardList size={24}/></div>
+                  <div><h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter">Extrato Auditado</h3><p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Detalhamento das contas do período</p></div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-slate-900 text-white">
-                        <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Vencimento</th>
-                        <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Descrição / Fornecedor</th>
-                        <th className="px-6 py-4 text-left text-[9px] font-black uppercase tracking-widest">Natureza</th>
-                        <th className="px-6 py-4 text-right text-[9px] font-black uppercase tracking-widest">Valor</th>
-                      </tr>
-                    </thead>
+                    <thead><tr className="bg-slate-900 text-white"><th className="px-8 py-5 text-left text-[11px] font-black uppercase tracking-widest">Data Venc.</th><th className="px-8 py-5 text-left text-[11px] font-black uppercase tracking-widest">Descrição / Fornecedor</th><th className="px-8 py-5 text-left text-[11px] font-black uppercase tracking-widest">Natureza</th><th className="px-8 py-5 text-center text-[11px] font-black uppercase tracking-widest">Status</th><th className="px-8 py-5 text-right text-[11px] font-black uppercase tracking-widest">Valor</th></tr></thead>
                     <tbody className="divide-y divide-slate-100">
                       {analytics.audit.items.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50 transition-colors group">
-                          <td className="px-6 py-4 text-[10px] font-mono font-bold text-slate-400">
-                            {new Date(row.dueDate + 'T12:00:00').toLocaleDateString('pt-BR')}
-                          </td>
-                          <td className="px-6 py-4">
-                             <p className="text-[11px] font-black text-slate-800 uppercase leading-none mb-0.5">{row.description}</p>
-                             <p className="text-[8px] font-bold text-slate-400 uppercase">{row.supplier}</p>
-                          </td>
-                          <td className="px-6 py-4">
-                             <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded text-[8px] font-black uppercase border border-slate-200">
-                               {row.nature}
-                             </span>
-                          </td>
-                          <td className="px-6 py-4 text-right text-[11px] font-mono font-black text-rose-500">
-                            {formatMoney(row.value)}
-                          </td>
+                        <tr key={i} className="hover:bg-slate-50 transition-colors">
+                          <td className="px-8 py-5 text-[14px] font-mono font-black text-slate-400">{row.dueDate.split('-').reverse().join('/')}</td>
+                          <td className="px-8 py-5"><p className="text-[14px] font-black text-slate-800 uppercase leading-none mb-1.5">{row.supplier}</p><p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{row.description}</p></td>
+                          <td className="px-8 py-5"><span className="px-4 py-1.5 bg-slate-100 text-slate-500 rounded-xl text-[10px] font-black uppercase border border-slate-200">{row.nature}</span></td>
+                          <td className="px-8 py-5 text-center"><span className={`px-3 py-1 rounded-lg text-[10px] font-black uppercase border ${row.status === 'Pago' ? 'bg-green-50 border-green-200 text-green-600' : 'bg-orange-50 border-orange-200 text-orange-600'}`}>{row.status}</span></td>
+                          <td className="px-8 py-5 text-right text-[15px] font-mono font-black text-slate-900">{formatMoney(row.value)}</td>
                         </tr>
                       ))}
-                      {analytics.audit.items.length === 0 && (
-                        <tr>
-                          <td colSpan={4} className="py-20 text-center text-[10px] font-black text-slate-300 uppercase tracking-[0.2em] italic">
-                            Sem registros para os filtros selecionados
-                          </td>
-                        </tr>
-                      )}
                     </tbody>
                   </table>
                 </div>
@@ -430,43 +321,22 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
   );
 };
 
-const DRETitle = ({ label, value }: { label: string, value: number }) => (
-  <div className="flex justify-between items-end pt-6 pb-2 border-b-2 border-slate-900 print:pt-4 print:pb-1">
-    <span className="text-[13px] md:text-[14px] font-black text-slate-900 uppercase tracking-widest">{label}</span>
-    <span className="text-[14px] md:text-[16px] font-mono font-black text-slate-900">{formatMoney(value)}</span>
+const DRETitle = ({ label, value, color, border }: { label: string, value: number, color: string, border: string }) => (
+  <div className={`flex justify-between items-end pt-2 pb-1 border-b-2 print:pt-1 print:pb-0.5 ${border}`}>
+    <span className={`text-[12px] md:text-[13px] font-black uppercase tracking-widest ${color}`}>{label}</span>
+    <span className={`text-[13px] md:text-[14px] font-mono font-black ${color}`}>{formatMoney(value)}</span>
   </div>
 );
 
 const DRERow = ({ label, value, rb, isNegative }: any) => {
   const percent = value / rb;
   return (
-    <div className="flex justify-between items-center py-2 transition-colors hover:bg-slate-50 px-2 rounded-lg print:py-1">
-      <div className="flex items-center gap-3">
-        <span className={`text-[12px] md:text-[13px] font-bold ${isNegative ? 'text-slate-500' : 'text-slate-700'} uppercase tracking-tight`}>{label}</span>
-        <span className="text-[9px] font-black px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded-md">
-          {formatPercent(percent)}
-        </span>
+    <div className="flex justify-between items-center py-1 transition-colors hover:bg-slate-50 px-3 rounded-lg print:py-0.5 print:px-1">
+      <div className="flex items-center gap-2">
+        <span className={`text-[11px] font-bold ${isNegative ? 'text-slate-500' : 'text-slate-700'} uppercase tracking-tight`}>{label}</span>
+        <span className="text-[8px] font-black px-1.5 py-0.5 bg-slate-100 text-slate-400 rounded border border-slate-200 print:hidden">{formatPercent(percent)}</span>
       </div>
-      <span className={`text-[12px] md:text-[13px] font-mono font-bold ${isNegative ? 'text-rose-500' : 'text-slate-800'}`}>
-        {isNegative && value > 0 ? '-' : ''} {formatMoney(value)}
-      </span>
-    </div>
-  );
-};
-
-const DRESubtotal = ({ label, value, rb, highlight }: any) => {
-  const percent = value / rb;
-  return (
-    <div className={`flex justify-between items-center py-3 px-5 rounded-xl mt-2 border ${highlight ? 'bg-slate-900 border-slate-800 text-white shadow-md print:bg-black' : 'bg-slate-100 border-slate-200 text-slate-800'}`}>
-      <div className="flex items-center gap-3">
-        <span className="text-[12px] md:text-[13px] font-black uppercase tracking-widest">{label}</span>
-        <span className={`text-[10px] font-mono font-black ${highlight ? 'text-emerald-400' : 'text-slate-500'}`}>
-          {formatPercent(percent)}
-        </span>
-      </div>
-      <span className={`text-xl font-mono font-black ${highlight ? 'text-white' : 'text-slate-900'}`}>
-        {formatMoney(value)}
-      </span>
+      <span className={`text-[11px] font-mono font-black ${isNegative ? 'text-rose-500' : 'text-slate-800'}`}>{isNegative && value > 0 ? '-' : ''} {formatMoney(value)}</span>
     </div>
   );
 };

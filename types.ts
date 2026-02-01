@@ -14,7 +14,7 @@ export interface CashEntry {
 }
 
 export type ExpenseNature = 
-  | 'Custo da Mercadoria Vendida (CMV)' 
+  | 'Custo da Mercadoria Vendida' 
   | 'Frete/Logística'
   | 'Embalagens'
   | 'Impostos'

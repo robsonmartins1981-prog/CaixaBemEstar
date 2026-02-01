@@ -33,10 +33,10 @@
     </script>
     <style>
       html, body { height: 100%; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-      body { background-color: #f1f5f9; color: #1e293b; overflow-x: hidden; font-size: 14px; }
+      body { background-color: #f1f5f9; color: #1e293b; overflow-x: hidden; font-size: 16px; }
       
       /* Otimização de scrollbars */
-      .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+      .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       
@@ -45,15 +45,15 @@
       /* Ajustes para inputs mobile */
       input, select, button { font-size: 16px !important; } /* Previne zoom no iOS */
       @media (min-width: 768px) {
-        input, select, button { font-size: 14px !important; }
+        input, select, button { font-size: 15px !important; }
       }
 
       /* REGRAS DE IMPRESSÃO */
       @media print {
         @page { size: A4; margin: 10mm; }
         .no-print { display: none !important; }
-        body { background: white !important; }
-        .recharts-responsive-container { height: 300px !important; }
+        body { background: white !important; font-size: 12pt !important; }
+        .recharts-responsive-container { height: 350px !important; }
       }
     </style>
 <script type="importmap">
