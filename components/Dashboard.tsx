@@ -29,7 +29,7 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     const filteredEntries = entries.filter(e => e.date && e.date.startsWith(filterMonth));
     const filteredExpenses = expenses.filter(e => e.dueDate && e.dueDate.startsWith(filterMonth));
 
-    // Cálculos DRE Simplificado (E/S)
+    // Auditoria de Receita: cash + pix + credit + debit
     const faturamento = {
       dinheiro: filteredEntries.reduce((acc, e) => acc + (e.cash || 0), 0),
       pix: filteredEntries.reduce((acc, e) => acc + (e.pix || 0), 0),
@@ -41,8 +41,8 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     const totalOutPending = filteredExpenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
     const totalSangrias = filteredEntries.reduce((acc, e) => acc + (e.sangria || 0), 0);
     
-    // Lucro Líquido = Receita Bruta - (Despesas Pagas + Sangrias)
-    const netBalance = totalIn - totalOutPaid - totalSangrias;
+    // Lucro Líquido Sincronizado: Receita Bruta - (Custo Pago + Sangrias)
+    const netBalance = totalIn - (totalOutPaid + totalSangrias);
 
     // Dados do Gráfico de Fluxo Diário
     const timelineMap: Record<string, any> = {};
@@ -55,21 +55,25 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     }
 
     filteredEntries.forEach(curr => {
-      if (timelineMap[curr.date]) timelineMap[curr.date].entradas += (curr.cash + curr.pix + (curr.credit || 0) + (curr.debit || 0));
+      if (timelineMap[curr.date]) {
+        timelineMap[curr.date].entradas += (curr.cash + curr.pix + (curr.credit || 0) + (curr.debit || 0));
+      }
     });
 
     filteredExpenses.filter(exp => exp.status === 'Pago').forEach(exp => {
-      if (timelineMap[exp.dueDate]) timelineMap[exp.dueDate].saidas += exp.value;
+      if (timelineMap[exp.dueDate]) {
+        timelineMap[exp.dueDate].saidas += exp.value;
+      }
     });
 
-    // Mix de Entradas (Donut com Valores)
+    // Mix de Entradas
     const mixData = [
       { name: 'Dinheiro', value: faturamento.dinheiro },
       { name: 'PIX', value: faturamento.pix },
       { name: 'Cartões', value: faturamento.cartao }
     ].filter(d => d.value > 0);
 
-    // Distribuição de Despesas (Barra Horizontal com Valores)
+    // Distribuição de Despesas
     const expenseMap: Record<string, number> = {};
     filteredExpenses.filter(e => e.status === 'Pago').forEach(exp => {
       expenseMap[exp.nature] = (expenseMap[exp.nature] || 0) + exp.value;
@@ -93,7 +97,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     setFilterMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
 
-  // Label Customizada para o Pie Chart mostrar valores
   const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, value, name }: any) => {
     const RADIAN = Math.PI / 180;
     const radius = outerRadius + 30;
@@ -108,15 +111,14 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
 
   return (
     <div className="flex-1 flex flex-col gap-5 overflow-y-auto custom-scrollbar h-full pb-8">
-      {/* HEADER DASHBOARD */}
       <div className="bg-white border border-slate-200 p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shrink-0 rounded-[2rem] shadow-sm">
         <div className="flex items-center gap-4">
           <div className="w-14 h-14 bg-slate-900 rounded-2xl flex items-center justify-center text-white shadow-lg">
             <span className="text-2xl">📊</span>
           </div>
           <div>
-            <h2 className="text-[14px] font-black uppercase tracking-[0.2em] text-slate-800 leading-none mb-1.5">Consolidado de Performance</h2>
-            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Acompanhamento de Fluxo Bruto vs Custo</p>
+            <h2 className="text-[14px] font-black uppercase tracking-[0.2em] text-slate-800 leading-none mb-1.5">Consolidado Financeiro</h2>
+            <p className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Revisão Auditada de Fluxo e Performance</p>
           </div>
         </div>
         <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200">
@@ -128,7 +130,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         </div>
       </div>
 
-      {/* CARDS INDICADORES */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4 shrink-0">
         <IndicatorCard title="Receita Bruta" value={stats.totalIn} color="border-emerald-100" valColor="text-emerald-600" />
         <IndicatorCard title="Sangrias" value={stats.totalSangrias} color="border-rose-100" valColor="text-rose-500" />
@@ -137,16 +138,15 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         <IndicatorCard title="Lucro Líquido" value={stats.netBalance} color="border-slate-300" valColor="text-slate-900" isMain />
       </div>
 
-      {/* GRÁFICO 1: FLUXO DIÁRIO (ÁREA) */}
       <div className="bg-white border border-slate-200 shadow-sm flex flex-col rounded-[2.5rem] overflow-hidden min-h-[400px]">
         <div className="p-8 bg-slate-50/50 border-b border-slate-100 flex items-center justify-between">
           <div>
-            <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-slate-800">Tendência de Liquidez Diária</h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Comparativo direto entre Entradas Brutas e Saídas</p>
+            <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-slate-800">Tendência Diária Auditada</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Comparativo entre Entradas e Pagamentos Realizados</p>
           </div>
           <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2"><div className="w-4 h-4 bg-emerald-500 rounded-lg"></div> <span className="text-[11px] font-black uppercase text-slate-500">Entradas</span></div>
-            <div className="flex items-center gap-2"><div className="w-4 h-4 bg-rose-500 rounded-lg"></div> <span className="text-[11px] font-black uppercase text-slate-500">Saídas</span></div>
+            <div className="flex items-center gap-2"><div className="w-4 h-4 bg-emerald-500 rounded-lg"></div> <span className="text-[11px] font-black uppercase text-slate-500">Receitas</span></div>
+            <div className="flex items-center gap-2"><div className="w-4 h-4 bg-rose-500 rounded-lg"></div> <span className="text-[11px] font-black uppercase text-slate-500">Despesas</span></div>
           </div>
         </div>
         <div className="flex-1 p-8">
@@ -169,20 +169,18 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
                 contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.15)', fontSize: '12px', fontWeight: '900', padding: '20px'}}
                 formatter={(val: number) => formatMoney(val)} 
               />
-              <Area type="monotone" name="Entradas" dataKey="entradas" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#gradEnt)" dot={{ r: 4, fill: '#10b981' }} />
-              <Area type="monotone" name="Saídas" dataKey="saidas" stroke="#f43f5e" strokeWidth={4} fillOpacity={1} fill="url(#gradSai)" dot={{ r: 4, fill: '#f43f5e' }} />
+              <Area type="monotone" name="Receitas" dataKey="entradas" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#gradEnt)" dot={{ r: 4, fill: '#10b981' }} />
+              <Area type="monotone" name="Despesas" dataKey="saidas" stroke="#f43f5e" strokeWidth={4} fillOpacity={1} fill="url(#gradSai)" dot={{ r: 4, fill: '#f43f5e' }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        
-        {/* GRÁFICO 2: MIX DE RECEITAS (DONUT COM VALORES) */}
         <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm h-[450px] flex flex-col">
           <div className="mb-2">
-            <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-slate-800">Origem do Capital</h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Valores brutos por modalidade de entrada</p>
+            <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-slate-800">Composição de Receitas</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Participação por modalidade financeira</p>
           </div>
           <div className="flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -208,11 +206,10 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
           </div>
         </div>
 
-        {/* GRÁFICO 3: TOP DESPESAS (BARRAS COM VALORES) */}
         <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm h-[450px] flex flex-col">
           <div className="mb-8">
-            <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-slate-800">Principais Destinos</h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Naturezas com maior concentração de pagamentos</p>
+            <h3 className="text-[13px] font-black uppercase tracking-[0.2em] text-slate-800">Concentração de Custos</h3>
+            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Top 5 naturezas com maior desembolso pago</p>
           </div>
           <div className="flex-1">
             <ResponsiveContainer width="100%" height="100%">
@@ -234,7 +231,6 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
             </ResponsiveContainer>
           </div>
         </div>
-
       </div>
     </div>
   );

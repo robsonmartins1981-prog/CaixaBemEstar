@@ -28,18 +28,24 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
-// Sanitização robusta para precisão financeira
+// Sanitização robusta para precisão financeira (Arredondamento fixo em 2 casas)
 const sanitizeNumber = (val: any): number => {
   if (val === null || val === undefined || isNaN(val)) return 0;
-  if (typeof val === 'number') return isFinite(val) ? Number(val.toFixed(2)) : 0;
+  if (typeof val === 'number') {
+    return isFinite(val) ? Math.round(val * 100) / 100 : 0;
+  }
   const s = String(val)
     .replace('R$', '')
     .replace(/\s/g, '')
-    .replace(/\./g, '')
+    // Se houver ponto e vírgula (formato BR 1.000,00), remove ponto e troca vírgula por ponto
+    .replace(/\./g, (match, offset, string) => {
+        // Só remove o ponto se ele for separador de milhar (seguido por 3 dígitos e depois outra pontuação ou fim)
+        return string.indexOf(',') > -1 ? '' : '.';
+    })
     .replace(',', '.')
     .trim();
   const n = parseFloat(s);
-  return isFinite(n) ? Number(n.toFixed(2)) : 0;
+  return isFinite(n) ? Math.round(n * 100) / 100 : 0;
 };
 
 export const db = {
@@ -207,7 +213,7 @@ export const db = {
   },
 
   getFullBackup: () => ({
-    version: '4.6',
+    version: '4.7',
     timestamp: new Date().toISOString(),
     data: {
       entries: db.getEntries(),
