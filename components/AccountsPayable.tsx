@@ -27,12 +27,16 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Expense, direction: 'asc' | 'desc' }>({ key: 'dueDate', direction: 'asc' });
   
+  // Estados para filtro de data
+  const [dateFilterMode, setDateFilterMode] = useState<'MES' | 'HOJE' | 'SEMANA' | 'CUSTOM' | 'TODOS'>('MES');
+  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+
   const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
 
-  // Fix: Move formData declaration here to avoid "used before declaration" errors in useMemo
   const [formData, setFormData] = useState<Omit<Expense, 'id'>>({
     description: '', supplier: '', dueDate: new Date().toISOString().split('T')[0],
     value: 0, nature: 'Outros', costType: 'Variável', status: 'Pendente',
@@ -43,7 +47,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   const [intervalDays, setIntervalDays] = useState(30);
   const [valueMode, setValueMode] = useState<'total' | 'parcel'>('total');
 
-  // Inicializa com as naturezas padrão
   const [selectedNatures, setSelectedNatures] = useState<string[]>(Array.from(NATURES));
   const [showNatureFilter, setShowNatureFilter] = useState(false);
 
@@ -83,26 +86,44 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   };
 
   const processedExpenses = useMemo(() => {
-    // Determina se o filtro de natureza está no estado "Todos Selecionados"
-    // Se estiver, não filtramos por selectedNatures para garantir visibilidade total
     const isAllNaturesSelected = selectedNatures.length === NATURES.length;
+    const todayStr = new Date().toISOString().split('T')[0];
 
     return expenses.filter(exp => {
+      // 1. Filtro de Busca
       const sTerm = searchTerm.toLowerCase().trim();
       const matchSearch = !sTerm || 
                           exp.supplier.toLowerCase().includes(sTerm) || 
                           exp.description.toLowerCase().includes(sTerm);
       
-      // Se "Todos" está marcado, mostra tudo. Se não, filtra estritamente.
+      // 2. Filtro de Natureza
       const matchNature = isAllNaturesSelected || selectedNatures.includes(exp.nature);
       
-      // Filtro de status robusto
+      // 3. Filtro de Status
       const matchStatus = 
         filterStatus === 'Todos' || 
         (filterStatus === 'Agendadas' && exp.status === 'Pendente') || 
         (filterStatus === 'Pagas' && exp.status === 'Pago');
 
-      return matchSearch && matchNature && matchStatus;
+      // 4. Filtro de Data
+      let matchDate = true;
+      if (dateFilterMode === 'HOJE') {
+        matchDate = exp.dueDate === todayStr;
+      } else if (dateFilterMode === 'SEMANA') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const weekAgoStr = weekAgo.toISOString().split('T')[0];
+        // Para despesas, olhamos a semana corrente (7 dias atrás até hoje ou futuro próximo)
+        // Aqui filtramos os últimos 7 dias até hoje para manter consistência com o caixa
+        matchDate = exp.dueDate >= weekAgoStr && exp.dueDate <= todayStr;
+      } else if (dateFilterMode === 'MES') {
+        const monthStr = todayStr.substring(0, 7);
+        matchDate = exp.dueDate.startsWith(monthStr);
+      } else if (dateFilterMode === 'CUSTOM') {
+        matchDate = exp.dueDate >= startDate && exp.dueDate <= endDate;
+      }
+
+      return matchSearch && matchNature && matchStatus && matchDate;
     }).sort((a, b) => {
       const valA = a[sortConfig.key];
       const valB = b[sortConfig.key];
@@ -114,7 +135,13 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       }
       return 0;
     });
-  }, [expenses, filterStatus, searchTerm, selectedNatures, sortConfig]);
+  }, [expenses, filterStatus, searchTerm, selectedNatures, sortConfig, dateFilterMode, startDate, endDate]);
+
+  const totals = useMemo(() => {
+    const pendente = processedExpenses.filter(e => e.status === 'Pendente').reduce((a,c) => a+c.value, 0);
+    const pago = processedExpenses.filter(e => e.status === 'Pago').reduce((a,c) => a+c.value, 0);
+    return { pendente, pago, total: pendente + pago };
+  }, [processedExpenses]);
 
   const SortIcon = ({ column }: { column: keyof Expense }) => {
     if (sortConfig?.key !== column) return <ArrowUpDown size={14} className="opacity-30 ml-2" />;
@@ -190,12 +217,6 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     setShowForm(false);
   };
 
-  const totals = useMemo(() => {
-    const pendente = expenses.filter(e => e.status === 'Pendente').reduce((a,c) => a+c.value, 0);
-    const pago = expenses.filter(e => e.status === 'Pago').reduce((a,c) => a+c.value, 0);
-    return { pendente, pago, total: pendente + pago };
-  }, [expenses]);
-
   const toggleNature = (nature: string) => {
     setSelectedNatures(prev => prev.includes(nature) ? prev.filter(n => n !== nature) : [...prev, nature]);
   };
@@ -214,21 +235,21 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         <div className="bg-white border p-4 rounded-[1.5rem] shadow-sm flex items-center gap-4 border-l-8 border-l-orange-500">
            <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500 shrink-0"><AlertCircle size={24}/></div>
            <div>
-             <p className="text-[11px] font-black text-slate-400 uppercase leading-none mb-1.5 tracking-wider">A Pagar Total</p>
+             <p className="text-[11px] font-black text-slate-400 uppercase leading-none mb-1.5 tracking-wider">A Pagar ({dateFilterMode === 'TODOS' ? 'Tudo' : 'Período'})</p>
              <p className="text-lg font-mono font-black text-slate-800 leading-none">{formatMoney(totals.pendente)}</p>
            </div>
         </div>
         <div className="bg-white border p-4 rounded-[1.5rem] shadow-sm flex items-center gap-4 border-l-8 border-l-green-500">
            <div className="w-10 h-10 rounded-xl bg-green-50 flex items-center justify-center text-green-500 shrink-0"><CheckCircle2 size={24}/></div>
            <div>
-             <p className="text-[11px] font-black text-slate-400 uppercase leading-none mb-1.5 tracking-wider">Histórico Pago</p>
+             <p className="text-[11px] font-black text-slate-400 uppercase leading-none mb-1.5 tracking-wider">Liquidado ({dateFilterMode === 'TODOS' ? 'Histórico' : 'Período'})</p>
              <p className="text-lg font-mono font-black text-green-600 leading-none">{formatMoney(totals.pago)}</p>
            </div>
         </div>
         <div className="bg-white border p-4 rounded-[1.5rem] shadow-sm flex items-center gap-4 border-l-8 border-l-blue-600">
            <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shrink-0"><TrendingUp size={24}/></div>
            <div>
-             <p className="text-[11px] font-black text-slate-400 uppercase leading-none mb-1.5 tracking-wider">Compromisso Total</p>
+             <p className="text-[11px] font-black text-slate-400 uppercase leading-none mb-1.5 tracking-wider">Total do Intervalo</p>
              <p className="text-lg font-mono font-black text-slate-900 leading-none">{formatMoney(totals.total)}</p>
            </div>
         </div>
@@ -360,35 +381,59 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         </form>
       )}
 
-      <div className="bg-white border border-slate-200 p-3 rounded-[2rem] flex flex-col gap-3 shrink-0 shadow-sm">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl overflow-x-auto no-scrollbar shrink-0 border border-slate-200">
+      {/* ÁREA DE FILTROS INTEGRADA */}
+      <div className="bg-white border border-slate-200 p-4 rounded-[2rem] flex flex-col gap-4 shrink-0 shadow-sm overflow-visible">
+        
+        <div className="flex flex-col xl:flex-row gap-4">
+          {/* Filtro de Período */}
+          <div className="flex bg-slate-100 p-1 rounded-2xl border border-slate-200 shrink-0">
+            <FilterBtn active={dateFilterMode === 'HOJE'} onClick={() => setDateFilterMode('HOJE')} label="Hoje" />
+            <FilterBtn active={dateFilterMode === 'SEMANA'} onClick={() => setDateFilterMode('SEMANA')} label="7 Dias" />
+            <FilterBtn active={dateFilterMode === 'MES'} onClick={() => setDateFilterMode('MES')} label="Mês" />
+            <FilterBtn active={dateFilterMode === 'TODOS'} onClick={() => setDateFilterMode('TODOS')} label="Tudo" />
+            <FilterBtn active={dateFilterMode === 'CUSTOM'} onClick={() => setDateFilterMode('CUSTOM')} label="Personalizado" />
+          </div>
+
+          {dateFilterMode === 'CUSTOM' && (
+            <div className="flex items-center gap-2 bg-white border border-slate-200 p-1 px-3 rounded-2xl shadow-inner animate-in slide-in-from-left-4">
+              <Calendar size={14} className="text-slate-400"/>
+              <input type="date" className="bg-transparent border-none outline-none text-[10px] font-black uppercase" value={startDate} onChange={e => setStartDate(e.target.value)} />
+              <span className="text-slate-300">|</span>
+              <input type="date" className="bg-transparent border-none outline-none text-[10px] font-black uppercase" value={endDate} onChange={e => setEndDate(e.target.value)} />
+            </div>
+          )}
+
+          <div className="flex-1 relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
+            <input placeholder="Buscar fornecedor ou descrição no período..." className="w-full h-12 pl-12 pr-6 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:border-blue-400 transition-all focus:bg-white" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <div className="flex bg-slate-50 p-1 rounded-2xl border border-slate-200 w-full sm:w-auto">
             {['Todos', 'Agendadas', 'Pagas'].map(s => (
-              <button key={s} onClick={() => setFilterStatus(s)} className={`px-6 py-2.5 rounded-xl text-[10px] font-black uppercase whitespace-nowrap transition-all ${filterStatus === s ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400'}`}>{s}</button>
+              <button key={s} onClick={() => setFilterStatus(s)} className={`flex-1 sm:flex-none px-6 py-2 rounded-xl text-[10px] font-black uppercase transition-all ${filterStatus === s ? 'bg-white text-blue-600 shadow-md' : 'text-slate-400'}`}>{s}</button>
             ))}
           </div>
-          <button onClick={() => setShowNatureFilter(!showNatureFilter)} className={`flex items-center justify-between px-6 h-12 rounded-2xl text-[10px] font-black uppercase border transition-all ${showNatureFilter ? 'bg-slate-800 text-white border-slate-700 shadow-lg' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300'}`}>
-            <div className="flex items-center gap-3"><Filter size={18}/> Filtros ({selectedNatures.length})</div>
+
+          <button onClick={() => setShowNatureFilter(!showNatureFilter)} className={`w-full sm:w-auto flex items-center justify-between px-6 h-11 rounded-2xl text-[10px] font-black uppercase border transition-all ${showNatureFilter ? 'bg-slate-800 text-white border-slate-700 shadow-lg' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300'}`}>
+            <div className="flex items-center gap-3"><Filter size={18}/> Naturezas ({selectedNatures.length})</div>
             <ChevronDown size={18} className={`transition-transform ${showNatureFilter ? 'rotate-180' : ''}`}/>
           </button>
-          <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18}/>
-            <input placeholder="Busca rápida por fornecedor ou descrição..." className="w-full h-12 pl-12 pr-6 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold outline-none focus:border-blue-400 transition-all focus:bg-white" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
-          </div>
         </div>
 
         {showNatureFilter && (
           <div className="p-4 bg-slate-50 rounded-[1.5rem] border border-slate-100 animate-in slide-in-from-top-4">
             <div className="flex justify-between items-center mb-4 px-2">
-               <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Seleção de Categorias</span>
+               <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Filtrar por Categoria</span>
                <div className="flex gap-6">
-                 <button onClick={() => setSelectedNatures(Array.from(NATURES))} className="text-[10px] font-black text-blue-600 uppercase hover:underline">Selecionar Tudo</button>
-                 <button onClick={() => setSelectedNatures([])} className="text-[10px] font-black text-slate-400 uppercase hover:underline">Limpar Tudo</button>
+                 <button onClick={() => setSelectedNatures(Array.from(NATURES))} className="text-[10px] font-black text-blue-600 uppercase hover:underline">Todas</button>
+                 <button onClick={() => setSelectedNatures([])} className="text-[10px] font-black text-slate-400 uppercase hover:underline">Nenhuma</button>
                </div>
             </div>
-            <div className="flex flex-wrap gap-2.5 max-h-48 overflow-y-auto custom-scrollbar p-1">
+            <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
               {NATURES.map(nature => (
-                <button key={nature} onClick={() => toggleNature(nature)} className={`px-4 py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border ${selectedNatures.includes(nature) ? 'bg-blue-600 text-white border-blue-500 shadow-md ring-2 ring-blue-100' : 'bg-white text-slate-400 border-slate-200 hover:border-blue-200'}`}>{nature}</button>
+                <button key={nature} onClick={() => toggleNature(nature)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase transition-all border ${selectedNatures.includes(nature) ? 'bg-blue-600 text-white border-blue-500 shadow-md' : 'bg-white text-slate-400 border-slate-200 hover:border-blue-200'}`}>{nature}</button>
               ))}
             </div>
           </div>
@@ -438,8 +483,8 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
               ))}
               {processedExpenses.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-32 text-center opacity-30 grayscale">
-                    <Search size={64} className="mx-auto mb-4"/><p className="text-sm font-black uppercase tracking-widest">Nenhum título localizado</p>
+                  <td colSpan={6} className="py-32 text-center grayscale opacity-30">
+                    <Calendar size={64} className="mx-auto mb-4 text-slate-200"/><p className="text-sm font-black uppercase tracking-widest text-slate-300">Nenhum título localizado no período</p>
                   </td>
                 </tr>
               )}
@@ -450,5 +495,14 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     </div>
   );
 };
+
+const FilterBtn = ({ active, onClick, label }: any) => (
+  <button 
+    onClick={onClick} 
+    className={`px-4 py-2.5 rounded-xl text-[9px] font-black uppercase transition-all whitespace-nowrap ${active ? 'bg-white text-slate-900 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+  >
+    {label}
+  </button>
+);
 
 export default AccountsPayable;
