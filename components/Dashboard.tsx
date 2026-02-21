@@ -4,8 +4,8 @@ import {
   CartesianGrid, Tooltip, ResponsiveContainer,
   XAxis, YAxis, Area, AreaChart, PieChart, Pie, Cell
 } from 'recharts';
-import { CashEntry, Expense, ShiftType } from '../types.ts';
-import { SHIFTS } from '../constants.tsx';
+import { CashEntry, Expense, ShiftType } from '../types';
+import { SHIFTS } from '../constants';
 import { 
   Wallet, QrCode, CreditCard, Landmark, TrendingUp, 
   ArrowUpRight, ArrowDownLeft, AlertCircle, 
@@ -78,10 +78,9 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
       (paymentFilters.credit ? faturamentoRaw.credito : 0);
 
     const totalOutPaid = filteredExpenses.filter(e => e.status === 'Pago').reduce((acc, e) => acc + e.value, 0);
-    const totalOutPending = filteredExpenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
-    const totalSangrias = filteredEntries.reduce((acc, e) => acc + (e.sangria || 0), 0);
+    const totalOutPending = expenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
     
-    const netBalance = totalIn - (totalOutPaid + totalSangrias);
+    const netBalance = totalIn - totalOutPaid;
 
     // 3. Média Diária
     const uniqueDaysCount = new Set(filteredEntries.map(e => e.date)).size;
@@ -128,7 +127,7 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     ].filter(d => d.value > 0);
 
     return { 
-      totalIn, totalOutPaid, totalOutPending, netBalance, totalSangrias, averageDaily, uniqueDaysCount,
+      totalIn, totalOutPaid, totalOutPending, netBalance, averageDaily, uniqueDaysCount,
       faturamento: faturamentoRaw,
       chartData: Object.values(timelineMap),
       mixData,
@@ -234,10 +233,9 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
       </div>
 
       {/* KPIs DE ALTO NÍVEL */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
         <MainKPICard title="Faturamento Bruto" value={stats.totalIn} icon={<ArrowUpRight className="text-emerald-500"/>} bg="bg-white" />
         <MainKPICard title="Média Diária" value={stats.averageDaily} icon={<TrendingUp className="text-cyan-500" size={18}/>} bg="bg-white" />
-        <MainKPICard title="Total Sangrias" value={stats.totalSangrias} icon={<ArrowDownLeft className="text-rose-500"/>} bg="bg-white" />
         <MainKPICard title="Despesas Pagas" value={stats.totalOutPaid} icon={<CheckCircle2 className="text-blue-500" size={18}/>} bg="bg-white" />
         <MainKPICard title="Contas Pendentes" value={stats.totalOutPending} icon={<AlertCircle className="text-orange-500" size={18}/>} bg="bg-white" />
         <MainKPICard title="Saldo Líquido" value={stats.netBalance} icon={<Layers className="text-white" size={18}/>} bg="bg-slate-900" isDark />
@@ -383,14 +381,14 @@ const PaymentToggle = ({ label, active, color, onClick }: any) => (
   </button>
 );
 
-const MainKPICard = ({ title, value, icon, bg, isDark }: any) => (
+const MainKPICard = ({ title, value, icon, bg, isDark, isCount }: any) => (
   <div className={`${bg} border border-slate-200 p-5 rounded-[2rem] shadow-sm transition-all hover:scale-[1.02] flex flex-col gap-3`}>
      <div className="flex items-center justify-between">
         <span className={`text-[9px] font-black uppercase tracking-[0.2em] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{title}</span>
         {icon}
      </div>
      <p className={`text-[1.2rem] font-mono font-black tracking-tighter ${isDark ? 'text-green-400' : 'text-slate-900'}`}>
-       {formatMoney(value)}
+       {isCount ? value : formatMoney(value)}
      </p>
   </div>
 );

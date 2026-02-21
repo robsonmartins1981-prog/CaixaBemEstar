@@ -1,13 +1,14 @@
 
 import React, { useState, useRef } from 'react';
-import { ICONS } from '../constants.tsx';
+import { ICONS } from '../constants';
 import { 
   Menu, LayoutGrid, Calculator, FileUp, Users, 
   HardDriveDownload, HardDriveUpload, Database, 
   X, CheckCircle2, AlertTriangle
 } from 'lucide-react';
-import { db } from '../services/db.ts';
-import ConfirmationModal from './ConfirmationModal.tsx';
+import { db } from '../services/db';
+import { syncService } from '../services/syncService';
+import ConfirmationModal from './ConfirmationModal';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -20,6 +21,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
   const [isRestoreModalOpen, setIsRestoreModalOpen] = useState(false);
   const [pendingBackupData, setPendingBackupData] = useState<any>(null);
   const [toast, setToast] = useState<{type: 'success' | 'error', msg: string} | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const restoreInputRef = useRef<HTMLInputElement>(null);
 
@@ -35,6 +37,39 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
   const showToast = (type: 'success' | 'error', msg: string) => {
     setToast({ type, msg });
     setTimeout(() => setToast(null), 3000);
+  };
+
+  const sincronizarBancoDeDados = async () => {
+    const opcao = window.prompt(
+      "☁️ SINCRONIZAÇÃO EM NUVEM\n\nDigite 1 para SALVAR dados na nuvem.\nDigite 2 para BAIXAR dados da nuvem."
+    );
+
+    if (opcao === "1") {
+      setIsSyncing(true);
+      const success = await syncService.saveToCloud();
+      setIsSyncing(false);
+      
+      if (success) {
+        alert("✅ Backup salvo na nuvem com sucesso!");
+      } else {
+        alert("❌ Erro ao salvar na nuvem. Verifique sua conexão ou o script do Google.");
+      }
+
+    } else if (opcao === "2") {
+      const confirmacao = window.confirm("⚠️ ATENÇÃO: Isso vai substituir os dados locais pelo backup da nuvem. Continuar?");
+      if (!confirmacao) return;
+
+      setIsSyncing(true);
+      const success = await syncService.downloadFromCloud();
+      setIsSyncing(false);
+      
+      if (success) {
+        alert("✅ Dados sincronizados com sucesso! A página será reiniciada.");
+        window.location.reload(); 
+      } else {
+        alert("❌ Erro ao baixar dados da nuvem ou nenhum backup encontrado.");
+      }
+    }
   };
 
   const handleExportBackup = () => {
@@ -78,7 +113,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
       }
     };
     reader.readAsText(file);
-    // Limpa o input para permitir selecionar o mesmo arquivo novamente
     e.target.value = '';
   };
 
@@ -86,10 +120,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
     if (!pendingBackupData) return;
     const success = db.restoreFullBackup(pendingBackupData);
     if (success) {
-      showToast('success', 'Backup restaurado!');
+      showToast('success', 'Dados atualizados!');
       setTimeout(() => window.location.reload(), 1000);
     } else {
-      showToast('error', 'Falha na restauração.');
+      showToast('error', 'Falha na atualização.');
     }
     setIsRestoreModalOpen(false);
   };
@@ -114,8 +148,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
         isOpen={isRestoreModalOpen}
         onClose={() => setIsRestoreModalOpen(false)}
         onConfirm={confirmRestore}
-        title="Restaurar Dados?"
-        message="Esta ação substituirá todos os dados atuais pelos dados do backup. Deseja continuar?"
+        title="Atualizar Banco de Dados?"
+        message="Esta ação irá mesclar os dados do arquivo com o seu banco atual. Registros novos serão adicionados e registros existentes com a mesma data/id serão atualizados. Deseja continuar?"
       />
 
       {isSidebarOpen && (
@@ -155,21 +189,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
               </button>
             ))}
           </nav>
-
-          <div className="p-4 bg-slate-900/50 space-y-3">
-            <button 
-              onClick={handleExportBackup}
-              className="w-full py-3 bg-slate-700 hover:bg-slate-600 active:scale-95 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all border border-slate-600 shadow-lg"
-            >
-              <HardDriveDownload size={16}/> Exportar Tudo
-            </button>
-            <button 
-              onClick={handleImportClick}
-              className="w-full py-3 bg-slate-800 hover:bg-slate-700 active:scale-95 rounded-lg text-[10px] font-black uppercase flex items-center justify-center gap-2 transition-all border border-slate-700"
-            >
-              <HardDriveUpload size={16}/> Importar Backup
-            </button>
-          </div>
         </div>
       </aside>
 
@@ -183,9 +202,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
               {menuItems.find(i => i.id === activeTab)?.label}
             </h2>
           </div>
-          <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-lg">
-            <Database size={18}/>
-          </div>
+          <button 
+            onClick={sincronizarBancoDeDados}
+            disabled={isSyncing}
+            className={`w-9 h-9 rounded-lg flex items-center justify-center text-white shadow-lg transition-all ${isSyncing ? 'bg-green-500 scale-105' : 'bg-slate-900 hover:bg-slate-800 hover:scale-105'}`}
+            title="Sincronizar com a Nuvem"
+          >
+            <Database size={18} className={isSyncing ? 'animate-pulse' : ''}/>
+          </button>
         </header>
 
         <main className="flex-1 p-3 lg:p-4 overflow-hidden bg-[#f1f5f9]">

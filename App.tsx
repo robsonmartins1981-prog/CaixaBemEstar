@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
-import Layout from './components/Layout.tsx';
-import Dashboard from './components/Dashboard.tsx';
-import CashEntryForm from './components/CashEntryForm.tsx';
-import AccountsPayable from './components/AccountsPayable.tsx';
-import Suppliers from './components/Suppliers.tsx';
-import Reports from './components/Reports.tsx';
-import ImportData from './components/ImportData.tsx';
-import { db } from './services/db.ts';
-import { CashEntry, Expense, Supplier } from './types.ts';
+import Layout from './components/Layout';
+import Dashboard from './components/Dashboard';
+import CashEntryForm from './components/CashEntryForm';
+import AccountsPayable from './components/AccountsPayable';
+import Suppliers from './components/Suppliers';
+import Reports from './components/Reports';
+import ImportData from './components/ImportData';
+import { db } from './services/db';
+import { CashEntry, Expense, Supplier } from './types';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');

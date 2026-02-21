@@ -1,8 +1,8 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Expense, ExpenseNature, Supplier } from '../types.ts';
-import { db } from '../services/db.ts';
-import { NATURES, COST_TYPES } from '../constants.tsx';
+import { Expense, ExpenseNature, Supplier } from '../types';
+import { db } from '../services/db';
+import { NATURES, COST_TYPES } from '../constants';
 import { 
   Plus, Trash2, Search, Filter, X, CheckSquare, Square, 
   ChevronDown, User, Calendar, Edit2, Info, Calculator, Layers,
@@ -107,20 +107,27 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
 
       // 4. Filtro de Data
       let matchDate = true;
-      if (dateFilterMode === 'HOJE') {
-        matchDate = exp.dueDate === todayStr;
+      const isOverdue = exp.status === 'Pendente' && exp.dueDate < todayStr;
+
+      if (dateFilterMode === 'TODOS') {
+        matchDate = true;
+      } else if (dateFilterMode === 'HOJE') {
+        matchDate = exp.dueDate === todayStr || isOverdue;
       } else if (dateFilterMode === 'SEMANA') {
         const weekAgo = new Date();
         weekAgo.setDate(weekAgo.getDate() - 7);
         const weekAgoStr = weekAgo.toISOString().split('T')[0];
-        // Para despesas, olhamos a semana corrente (7 dias atrás até hoje ou futuro próximo)
-        // Aqui filtramos os últimos 7 dias até hoje para manter consistência com o caixa
-        matchDate = exp.dueDate >= weekAgoStr && exp.dueDate <= todayStr;
+        
+        const weekAhead = new Date();
+        weekAhead.setDate(weekAhead.getDate() + 7);
+        const weekAheadStr = weekAhead.toISOString().split('T')[0];
+        
+        matchDate = (exp.dueDate >= weekAgoStr && exp.dueDate <= weekAheadStr) || isOverdue;
       } else if (dateFilterMode === 'MES') {
         const monthStr = todayStr.substring(0, 7);
-        matchDate = exp.dueDate.startsWith(monthStr);
+        matchDate = exp.dueDate.startsWith(monthStr) || isOverdue;
       } else if (dateFilterMode === 'CUSTOM') {
-        matchDate = exp.dueDate >= startDate && exp.dueDate <= endDate;
+        matchDate = (exp.dueDate >= startDate && exp.dueDate <= endDate) || isOverdue;
       }
 
       return matchSearch && matchNature && matchStatus && matchDate;
@@ -192,25 +199,41 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+
+    const trimmedSupplier = formData.supplier.trim();
+    const expenseToSave = { ...formData, supplier: trimmedSupplier };
+
+    // Auto-create supplier if it doesn't exist
+    const suppliers = db.getSuppliers();
+    if (trimmedSupplier && !suppliers.some(s => s.name.toLowerCase() === trimmedSupplier.toLowerCase())) {
+      db.saveSupplier({
+        name: trimmedSupplier,
+        category: formData.nature,
+        contactName: '',
+        contactPhone: '',
+        contactEmail: ''
+      });
+    }
+
     if (editingId) {
-      db.updateExpense(editingId, formData);
+      db.updateExpense(editingId, expenseToSave);
     } else if (isInstallment && installmentCount > 1) {
       const valuePerParcel = valueMode === 'total' 
-        ? Math.round((formData.value / installmentCount) * 100) / 100
-        : formData.value;
+        ? Math.round((expenseToSave.value / installmentCount) * 100) / 100
+        : expenseToSave.value;
         
-      const baseDescription = formData.description;
+      const baseDescription = expenseToSave.description;
       for (let i = 0; i < installmentCount; i++) {
-        const parcelDate = addDays(formData.dueDate, i * intervalDays);
+        const parcelDate = addDays(expenseToSave.dueDate, i * intervalDays);
         db.saveExpense({
-          ...formData,
+          ...expenseToSave,
           description: `${baseDescription} (${i + 1}/${installmentCount})`,
           dueDate: parcelDate,
           value: valuePerParcel
         });
       }
     } else {
-      db.saveExpense(formData);
+      db.saveExpense(expenseToSave);
     }
     onSuccess();
     resetFormState();
@@ -454,9 +477,16 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {processedExpenses.map((exp) => (
-                <tr key={exp.id} className={`hover:bg-slate-50/80 transition-colors ${editingId === exp.id ? 'bg-orange-50' : ''}`}>
-                  <td className="px-6 py-5 text-[13px] font-mono font-black text-slate-700">{exp.dueDate.split('-').reverse().join('/')}</td>
+              {processedExpenses.map((exp) => {
+                const isOverdue = exp.status === 'Pendente' && exp.dueDate < new Date().toISOString().split('T')[0];
+                return (
+                <tr key={exp.id} className={`hover:bg-slate-50/80 transition-colors ${editingId === exp.id ? 'bg-orange-50' : ''} ${isOverdue ? 'bg-red-50/30' : ''}`}>
+                  <td className={`px-6 py-5 text-[13px] font-mono font-black ${isOverdue ? 'text-red-600' : 'text-slate-700'}`}>
+                    {exp.dueDate.split('-').reverse().join('/')}
+                    {isOverdue && (
+                      <div className="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded uppercase tracking-wider inline-block ml-2">Atrasado</div>
+                    )}
+                  </td>
                   <td className="px-6 py-5">
                     <div className="text-[13px] font-black text-slate-900 uppercase truncate max-w-[250px] leading-tight mb-1">{exp.supplier}</div>
                     <div className="text-[10px] font-bold text-slate-400 truncate max-w-[250px] uppercase tracking-tight">{exp.description}</div>
@@ -480,7 +510,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                     </div>
                   </td>
                 </tr>
-              ))}
+              )})}
               {processedExpenses.length === 0 && (
                 <tr>
                   <td colSpan={6} className="py-32 text-center grayscale opacity-30">

@@ -18,6 +18,7 @@ export const NATURES = [
   'Aluguel', 
   'Salários e Encargos Trabalhistas', 
   'Pró-labore',
+  'Comissão',
   'Utilidades', 
   'Marketing e Publicidade', 
   'Contabilidade',

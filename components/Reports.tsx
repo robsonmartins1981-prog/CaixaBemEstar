@@ -1,8 +1,8 @@
 
 import React, { useMemo, useState } from 'react';
-import { CashEntry, Expense } from '../types.ts';
-import { db } from '../services/db.ts';
-import { NATURES } from '../constants.tsx';
+import { CashEntry, Expense } from '../types';
+import { db } from '../services/db';
+import { NATURES } from '../constants';
 import { 
   ChevronLeft, ChevronRight, PieChart, ClipboardList, FileDown, 
   BarChart3, Filter, CheckCircle2, Circle, Receipt, Clock
@@ -93,8 +93,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     };
     const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito;
     const custoOperacional = paidPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
-    const totalSangrias = periodEntries.reduce((acc, e) => acc + (e.sangria || 0), 0);
-    const custoTotalReal = custoOperacional + totalSangrias;
+    const custoTotalReal = custoOperacional;
     const lucroLiquido = receitaBruta - custoTotalReal;
 
     const allPeriodExpenses = expenses.filter(e => filterFn(e.dueDate));
@@ -111,7 +110,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       .sort((a, b) => b.value - a.value);
 
     return {
-      dre: { receitaBruta, faturamento, custoOperacional, totalSangrias, custoTotalReal, lucroLiquido, totalOutPending },
+      dre: { receitaBruta, faturamento, custoOperacional, custoTotalReal, lucroLiquido, totalOutPending },
       audit: { items: allPeriodExpenses.filter(e => selectedNatures.includes(e.nature)).sort((a, b) => a.dueDate.localeCompare(b.dueDate)), compositionData, totalObrigacoes }
     };
   }, [entries, expenses, periodType, baseDate, startDate, endDate, selectedNatures]);
@@ -190,7 +189,6 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
                 <div className="space-y-1 print:space-y-0">
                   <DRETitle label="2. CUSTO OPERACIONAL (SAÍDAS REAIS)" value={analytics.dre.custoTotalReal} color="text-rose-600" border="border-rose-200" />
                   <DRERow label="(-) Pagamentos de Contas" value={analytics.dre.custoOperacional} rb={rb} isNegative />
-                  <DRERow label="(-) Sangrias do Período" value={analytics.dre.totalSangrias} rb={rb} isNegative />
                 </div>
 
                 <div className="h-6 print:h-4"></div>

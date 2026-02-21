@@ -1,13 +1,13 @@
 
 import React, { useState, useMemo } from 'react';
-import { Supplier, Expense } from '../types.ts';
-import { db } from '../services/db.ts';
-import { NATURES } from '../constants.tsx';
+import { Supplier, Expense } from '../types';
+import { db } from '../services/db';
+import { NATURES } from '../constants';
 import { 
   Plus, Trash2, UserPlus, List, Search, ArrowUpDown, ChevronUp, ChevronDown, 
   Edit2, X, Phone, Mail, User, Users, ArrowLeft, Receipt, CheckCircle2, AlertCircle, Save
 } from 'lucide-react';
-import ConfirmationModal from './ConfirmationModal.tsx';
+import ConfirmationModal from './ConfirmationModal';
 
 interface SuppliersProps {
   onSuccess: () => void;
@@ -35,12 +35,29 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) return;
+    const nameTrimmed = formData.name.trim();
+    if (!nameTrimmed) return;
 
     if (editingId) {
-      db.updateSupplier(editingId, formData);
+      const exists = suppliers.some(s => s.id !== editingId && s.name.toLowerCase() === nameTrimmed.toLowerCase());
+      if (exists) {
+        setErrorModal({
+          title: "Fornecedor Duplicado",
+          message: `Já existe outro fornecedor cadastrado com o nome "${nameTrimmed}".`
+        });
+        return;
+      }
+      db.updateSupplier(editingId, { ...formData, name: nameTrimmed });
     } else {
-      db.saveSupplier(formData);
+      const exists = suppliers.some(s => s.name.toLowerCase() === nameTrimmed.toLowerCase());
+      if (exists) {
+        setErrorModal({
+          title: "Fornecedor Duplicado",
+          message: `Já existe um fornecedor cadastrado com o nome "${nameTrimmed}".`
+        });
+        return;
+      }
+      db.saveSupplier({ ...formData, name: nameTrimmed });
     }
     
     resetForm();
@@ -363,10 +380,11 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
 
   const handleSaveExpense = (e: React.FormEvent) => {
     e.preventDefault();
+    const expenseToSave = { ...formData, supplier: supplier.name.trim() };
     if (editingExpenseId) {
-      db.updateExpense(editingExpenseId, formData);
+      db.updateExpense(editingExpenseId, expenseToSave);
     } else {
-      db.saveExpense(formData);
+      db.saveExpense(expenseToSave);
     }
     setEditingExpenseId(null);
     setShowQuickForm(false);

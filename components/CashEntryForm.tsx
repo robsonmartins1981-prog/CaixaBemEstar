@@ -1,10 +1,10 @@
 
 import React, { useState, useMemo, useRef } from 'react';
-import { CashEntry, ShiftType } from '../types.ts';
-import { db } from '../services/db.ts';
-import { SHIFTS } from '../constants.tsx';
+import { CashEntry, ShiftType } from '../types';
+import { db } from '../services/db';
+import { SHIFTS } from '../constants';
 import { Save, Eye, X, Calendar, Search, Filter, RotateCcw } from 'lucide-react';
-import ConfirmationModal from './ConfirmationModal.tsx';
+import ConfirmationModal from './ConfirmationModal';
 
 interface CashEntryFormProps {
   onSuccess: () => void;
@@ -30,12 +30,11 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
   const pixRef = useRef<HTMLInputElement>(null);
   const creditRef = useRef<HTMLInputElement>(null);
   const debitRef = useRef<HTMLInputElement>(null);
-  const sangriaRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<Omit<CashEntry, 'id' | 'code'>>({
     date: new Date().toISOString().split('T')[0],
     shift: 'CAIXA 01 (MANHÃ)',
-    cash: 0, credit: 0, debit: 0, pix: 0, sangria: 0,
+    cash: 0, credit: 0, debit: 0, pix: 0,
   });
 
   const filteredEntries = useMemo(() => {
@@ -69,10 +68,9 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
       pix: acc.pix + curr.pix,
       credit: acc.credit + curr.credit,
       debit: acc.debit + curr.debit,
-      sangria: acc.sangria + curr.sangria,
       bruto: acc.bruto + (curr.cash + curr.pix + curr.credit + curr.debit),
-      liquido: acc.liquido + (curr.cash + curr.pix + curr.credit + curr.debit - curr.sangria)
-    }), { cash: 0, pix: 0, credit: 0, debit: 0, sangria: 0, bruto: 0, liquido: 0 });
+      liquido: acc.liquido + (curr.cash + curr.pix + curr.credit + curr.debit)
+    }), { cash: 0, pix: 0, credit: 0, debit: 0, bruto: 0, liquido: 0 });
   }, [filteredEntries]);
 
   const handleEdit = (entry: CashEntry) => {
@@ -83,8 +81,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
       cash: entry.cash,
       pix: entry.pix,
       credit: entry.credit,
-      debit: entry.debit,
-      sangria: entry.sangria
+      debit: entry.debit
     });
     dateRef.current?.focus();
   };
@@ -100,7 +97,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
     
     onSuccess();
     setEditingId(null);
-    setFormData({ ...formData, cash: 0, credit: 0, debit: 0, pix: 0, sangria: 0 });
+    setFormData({ ...formData, cash: 0, credit: 0, debit: 0, pix: 0 });
     dateRef.current?.focus();
   };
 
@@ -116,7 +113,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
     }
   };
 
-  const liquidoTotal = (formData.cash + formData.credit + formData.debit + formData.pix) - (formData.sangria || 0);
+  const liquidoTotal = (formData.cash + formData.credit + formData.debit + formData.pix);
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row gap-6 h-full overflow-hidden">
@@ -140,7 +137,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
              </h3>
           </div>
           {editingId && (
-            <button onClick={() => { setEditingId(null); setFormData({...formData, cash:0, pix:0, credit:0, debit:0, sangria:0}); }} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
+            <button onClick={() => { setEditingId(null); setFormData({...formData, cash:0, pix:0, credit:0, debit:0}); }} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
               <RotateCcw size={18}/>
             </button>
           )}
@@ -177,8 +174,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
             <CompactInput inputRef={cashRef} label="Dinheiro" value={formData.cash} onChange={(v: number) => setFormData({...formData, cash: v})} color="border-emerald-500" onKeyDown={(e: any) => handleKeyDown(e, pixRef)} />
             <CompactInput inputRef={pixRef} label="Recebido via Pix" value={formData.pix} onChange={(v: number) => setFormData({...formData, pix: v})} color="border-cyan-500" onKeyDown={(e: any) => handleKeyDown(e, creditRef)} />
             <CompactInput inputRef={creditRef} label="Cartão de Crédito" value={formData.credit} onChange={(v: number) => setFormData({...formData, credit: v})} color="border-blue-600" onKeyDown={(e: any) => handleKeyDown(e, debitRef)} />
-            <CompactInput inputRef={debitRef} label="Cartão de Débito" value={formData.debit} onChange={(v: number) => setFormData({...formData, debit: v})} color="border-indigo-400" onKeyDown={(e: any) => handleKeyDown(e, sangriaRef)} />
-            <CompactInput inputRef={sangriaRef} label="Sangria de Caixa" value={formData.sangria} onChange={(v: number) => setFormData({...formData, sangria: v})} color="border-rose-500" onKeyDown={(e: any) => handleKeyDown(e, null)} />
+            <CompactInput inputRef={debitRef} label="Cartão de Débito" value={formData.debit} onChange={(v: number) => setFormData({...formData, debit: v})} color="border-indigo-400" onKeyDown={(e: any) => handleKeyDown(e, null)} />
           </div>
 
           <div className="mt-auto pt-6 border-t border-slate-100">
@@ -228,8 +224,6 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
                 <th className="px-4 py-5 text-right">Pix</th>
                 <th className="px-4 py-5 text-right">Crédito</th>
                 <th className="px-4 py-5 text-right">Débito</th>
-                <th className="px-4 py-5 text-right bg-slate-50/50">Bruto</th>
-                <th className="px-4 py-5 text-right">Sangria</th>
                 <th className="px-6 py-5 text-right text-slate-900 border-l border-slate-50">Líquido</th>
                 <th className="px-6 py-5 text-center w-28">Gestão</th>
               </tr>
@@ -249,9 +243,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
                     <td className="px-4 py-5 text-right text-[12px] font-mono font-bold text-slate-600">{formatMoney(e.pix)}</td>
                     <td className="px-4 py-5 text-right text-[12px] font-mono font-bold text-slate-600">{formatMoney(e.credit)}</td>
                     <td className="px-4 py-5 text-right text-[12px] font-mono font-bold text-slate-600">{formatMoney(e.debit)}</td>
-                    <td className="px-4 py-5 text-right text-[12px] font-mono font-black text-emerald-600 bg-emerald-50/20">{formatMoney(totalIn)}</td>
-                    <td className="px-4 py-5 text-right text-[12px] font-mono font-bold text-rose-500">{formatMoney(e.sangria)}</td>
-                    <td className="px-6 py-5 text-right text-[14px] font-mono font-black text-slate-900 border-l border-slate-50">{formatMoney(totalIn - e.sangria)}</td>
+                    <td className="px-6 py-5 text-right text-[14px] font-mono font-black text-slate-900 border-l border-slate-50">{formatMoney(totalIn)}</td>
                     <td className="px-6 py-5">
                        <div className="flex justify-center gap-2">
                           <button onClick={() => handleEdit(e)} className="p-2.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><Search size={18}/></button>
@@ -280,8 +272,6 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
                   <td className="px-4 py-5 text-right text-[11px] font-mono font-black">{formatMoney(tableTotals.pix)}</td>
                   <td className="px-4 py-5 text-right text-[11px] font-mono font-black">{formatMoney(tableTotals.credit)}</td>
                   <td className="px-4 py-5 text-right text-[11px] font-mono font-black">{formatMoney(tableTotals.debit)}</td>
-                  <td className="px-4 py-5 text-right text-[12px] font-mono font-black text-emerald-400">{formatMoney(tableTotals.bruto)}</td>
-                  <td className="px-4 py-5 text-right text-[11px] font-mono font-black text-rose-400">{formatMoney(tableTotals.sangria)}</td>
                   <td className="px-6 py-5 text-right text-[16px] font-mono font-black text-green-400 bg-slate-800">{formatMoney(tableTotals.liquido)}</td>
                   <td className="bg-slate-900"></td>
                 </tr>
@@ -352,12 +342,11 @@ const DetailViewModal = ({ entry, onClose }: any) => (
            <DetailRow label="Pix" value={entry.pix} />
            <DetailRow label="Crédito" value={entry.credit} />
            <DetailRow label="Débito" value={entry.debit} />
-           <DetailRow label="Sangrias" value={-entry.sangria} color="text-rose-500" />
         </div>
 
         <div className="p-6 bg-slate-900 rounded-[2rem] text-center">
           <p className="text-[9px] font-black text-slate-500 uppercase mb-2 tracking-widest">Total Líquido do Caixa</p>
-          <p className="text-3xl font-mono font-black text-green-400">{formatMoney(entry.cash + entry.pix + entry.credit + entry.debit - entry.sangria)}</p>
+          <p className="text-3xl font-mono font-black text-green-400">{formatMoney(entry.cash + entry.pix + entry.credit + entry.debit)}</p>
         </div>
       </div>
     </div>

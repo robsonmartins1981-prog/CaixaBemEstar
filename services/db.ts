@@ -2,14 +2,14 @@
 import { CashEntry, Expense, CardRates, Supplier } from '../types.ts';
 
 const KEYS = {
-  ENTRIES: 'fm_cash_entries',
-  EXPENSES: 'fm_expenses',
+  ENTRIES: 'caixa',
+  EXPENSES: 'contas',
   RATES: 'fm_card_rates',
-  SUPPLIERS: 'fm_suppliers',
+  SUPPLIERS: 'fornecedores',
   RESTORE_POINT: 'fm_auto_restore_point'
 };
 
-const safeSetItem = (key: string, value: string) => {
+export const safeSetItem = (key: string, value: string) => {
   try {
     localStorage.setItem(key, value);
     return true;
@@ -37,9 +37,7 @@ const sanitizeNumber = (val: any): number => {
   const s = String(val)
     .replace('R$', '')
     .replace(/\s/g, '')
-    // Se houver ponto e vírgula (formato BR 1.000,00), remove ponto e troca vírgula por ponto
     .replace(/\./g, (match, offset, string) => {
-        // Só remove o ponto se ele for separador de milhar (seguido por 3 dígitos e depois outra pontuação ou fim)
         return string.indexOf(',') > -1 ? '' : '.';
     })
     .replace(',', '.')
@@ -80,8 +78,7 @@ export const db = {
         cash: sanitizeNumber(e.cash),
         pix: sanitizeNumber(e.pix),
         credit: sanitizeNumber(e.credit),
-        debit: sanitizeNumber(e.debit),
-        sangria: sanitizeNumber(e.sangria)
+        debit: sanitizeNumber(e.debit)
       })) : [];
     } catch (e) {
       return [];
@@ -95,8 +92,7 @@ export const db = {
       cash: sanitizeNumber(entry.cash),
       pix: sanitizeNumber(entry.pix),
       credit: sanitizeNumber(entry.credit),
-      debit: sanitizeNumber(entry.debit),
-      sangria: sanitizeNumber(entry.sangria)
+      debit: sanitizeNumber(entry.debit)
     };
 
     const idx = entries.findIndex(e => e.date === sanitized.date && e.shift === sanitized.shift);
@@ -115,8 +111,7 @@ export const db = {
       cash: sanitizeNumber(entry.cash),
       pix: sanitizeNumber(entry.pix),
       credit: sanitizeNumber(entry.credit),
-      debit: sanitizeNumber(entry.debit),
-      sangria: sanitizeNumber(entry.sangria)
+      debit: sanitizeNumber(entry.debit)
     });
     safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
   },
@@ -131,8 +126,7 @@ export const db = {
         cash: sanitizeNumber(updated.cash),
         pix: sanitizeNumber(updated.pix),
         credit: sanitizeNumber(updated.credit),
-        debit: sanitizeNumber(updated.debit),
-        sangria: sanitizeNumber(updated.sangria)
+        debit: sanitizeNumber(updated.debit)
       };
       safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
     }
@@ -202,8 +196,24 @@ export const db = {
     const suppliers = db.getSuppliers();
     const idx = suppliers.findIndex(s => s.id === id);
     if (idx !== -1) {
+      const oldName = suppliers[idx].name;
       suppliers[idx] = { ...suppliers[idx], ...updated };
       safeSetItem(KEYS.SUPPLIERS, JSON.stringify(suppliers));
+
+      // Cascade update to expenses if supplier name changed
+      if (oldName !== updated.name) {
+        const expenses = db.getExpenses();
+        let changed = false;
+        expenses.forEach(exp => {
+          if (exp.supplier === oldName || exp.supplier.toLowerCase() === oldName.toLowerCase()) {
+            exp.supplier = updated.name;
+            changed = true;
+          }
+        });
+        if (changed) {
+          safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
+        }
+      }
     }
   },
 
@@ -213,7 +223,7 @@ export const db = {
   },
 
   getFullBackup: () => ({
-    version: '4.7',
+    version: '5.0',
     timestamp: new Date().toISOString(),
     data: {
       entries: db.getEntries(),
@@ -226,12 +236,59 @@ export const db = {
   restoreFullBackup: (backup: any) => {
     try {
       if (!backup?.data) return false;
-      safeSetItem(KEYS.ENTRIES, JSON.stringify(backup.data.entries));
-      safeSetItem(KEYS.EXPENSES, JSON.stringify(backup.data.expenses));
-      safeSetItem(KEYS.SUPPLIERS, JSON.stringify(backup.data.suppliers));
-      safeSetItem(KEYS.RATES, JSON.stringify(backup.data.rates));
+
+      // 1. Merge de Entradas de Caixa (Upsert por Data e Turno)
+      const currentEntries = db.getEntries();
+      if (Array.isArray(backup.data.entries)) {
+        backup.data.entries.forEach((newEntry: any) => {
+          const idx = currentEntries.findIndex(ce => ce.date === newEntry.date && ce.shift === newEntry.shift);
+          if (idx !== -1) {
+            currentEntries[idx] = { ...currentEntries[idx], ...newEntry };
+          } else {
+            currentEntries.push(newEntry);
+          }
+        });
+      }
+      safeSetItem(KEYS.ENTRIES, JSON.stringify(currentEntries));
+
+      // 2. Merge de Despesas (Upsert por ID)
+      const currentExpenses = db.getExpenses();
+      if (Array.isArray(backup.data.expenses)) {
+        backup.data.expenses.forEach((newExp: any) => {
+          const idx = currentExpenses.findIndex(ce => ce.id === newExp.id);
+          if (idx !== -1) {
+            currentExpenses[idx] = { ...currentExpenses[idx], ...newExp };
+          } else {
+            currentExpenses.push(newExp);
+          }
+        });
+      }
+      safeSetItem(KEYS.EXPENSES, JSON.stringify(currentExpenses));
+
+      // 3. Merge de Fornecedores (Upsert por Nome)
+      const currentSuppliers = db.getSuppliers();
+      if (Array.isArray(backup.data.suppliers)) {
+        backup.data.suppliers.forEach((newSup: any) => {
+          const idx = currentSuppliers.findIndex(cs => cs.name.toLowerCase() === newSup.name.toLowerCase());
+          if (idx !== -1) {
+            currentSuppliers[idx] = { ...currentSuppliers[idx], ...newSup };
+          } else {
+            currentSuppliers.push(newSup);
+          }
+        });
+      }
+      safeSetItem(KEYS.SUPPLIERS, JSON.stringify(currentSuppliers));
+
+      // 4. Taxas de Cartão (Sobrescrita simples pois é configuração única)
+      if (backup.data.rates) {
+        db.saveCardRates(backup.data.rates);
+      }
+
       return true;
-    } catch (e) { return false; }
+    } catch (e) { 
+      console.error("Erro na mesclagem de backup:", e);
+      return false; 
+    }
   },
 
   seedInitialData: (csv: string) => {
@@ -246,8 +303,7 @@ export const db = {
         cash: sanitizeNumber(cash),
         credit: sanitizeNumber(credit),
         debit: sanitizeNumber(debit),
-        pix: sanitizeNumber(pix),
-        sangria: 0
+        pix: sanitizeNumber(pix)
       });
     });
     return lines.length - 1;
