@@ -4,12 +4,14 @@ import * as XLSX from 'xlsx';
 import { db } from '../services/db';
 import { 
   Download, FileSpreadsheet, HardDriveDownload, 
-  CheckCircle2, AlertCircle, X, ArrowRight, Database, Upload
+  CheckCircle2, AlertCircle, X, ArrowRight, Database, Upload, Trash2
 } from 'lucide-react';
+import ConfirmationModal from './ConfirmationModal';
 
 const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleExportData = (type: 'caixa' | 'contas') => {
@@ -126,6 +128,20 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-2">Gere planilhas oficiais ou faça backup completo do sistema</p>
       </div>
 
+      <ConfirmationModal 
+        isOpen={isClearModalOpen}
+        onClose={() => setIsClearModalOpen(false)}
+        onConfirm={() => {
+          db.clearAllData();
+          setSuccess("Todos os dados foram apagados com sucesso.");
+          onSuccess();
+          setIsClearModalOpen(false);
+          setTimeout(() => window.location.reload(), 1500);
+        }}
+        title="Apagar TODOS os Dados?"
+        message="Esta ação é irreversível. Todos os lançamentos de caixa, contas a pagar, fornecedores e configurações serão removidos permanentemente. Deseja continuar?"
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* CARD EXPORT CAIXA */}
         <button 
@@ -226,6 +242,30 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
             />
           </label>
         </div>
+
+        {/* CARD LIMPAR DADOS */}
+        <button 
+          onClick={() => setIsClearModalOpen(true)}
+          className="group bg-rose-50 border border-rose-100 p-8 rounded-[2.5rem] shadow-sm hover:shadow-xl hover:border-rose-300 transition-all text-left flex flex-col justify-between h-64 relative overflow-hidden md:col-span-2"
+        >
+          <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
+            <Trash2 size={120} className="text-rose-600" />
+          </div>
+
+          <div>
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 transition-transform">
+              <Trash2 size={24} />
+            </div>
+            <h3 className="text-xl font-black text-rose-800 uppercase tracking-tight">Limpar Todos os Dados</h3>
+            <p className="text-[10px] font-bold text-rose-400 uppercase mt-2 leading-relaxed">
+              CUIDADO: Esta opção apaga permanentemente todos os registros do sistema (Caixa, Contas e Fornecedores).
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 text-[10px] font-black text-rose-600 uppercase tracking-widest group-hover:gap-4 transition-all">
+            Apagar Banco de Dados <ArrowRight size={14} />
+          </div>
+        </button>
       </div>
 
       {/* FEEDBACK FEED */}

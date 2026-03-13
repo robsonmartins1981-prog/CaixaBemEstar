@@ -291,6 +291,14 @@ export const db = {
     }
   },
 
+  clearAllData: () => {
+    localStorage.removeItem(KEYS.ENTRIES);
+    localStorage.removeItem(KEYS.EXPENSES);
+    localStorage.removeItem(KEYS.SUPPLIERS);
+    localStorage.removeItem(KEYS.RATES);
+    return true;
+  },
+
   seedInitialData: (csv: string) => {
     const entries = db.getEntries();
     if (entries.length > 0) return 0;

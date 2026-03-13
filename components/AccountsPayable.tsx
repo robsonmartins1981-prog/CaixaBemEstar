@@ -7,9 +7,10 @@ import {
   Plus, Trash2, Search, Filter, X, CheckSquare, Square, 
   ChevronDown, User, Calendar, Edit2, Info, Calculator, Layers,
   TrendingUp, AlertCircle, CheckCircle2, ArrowUpDown, ChevronUp, Tag,
-  ArrowRight
+  ArrowRight, FileUp
 } from 'lucide-react';
-import ConfirmationModal from './ConfirmationModal.tsx';
+import ConfirmationModal from './ConfirmationModal';
+import { parseNFeXML, convertParsedDataToExpenses } from '../services/xmlParser';
 
 interface AccountsPayableProps {
   onSuccess: () => void;
@@ -36,6 +37,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestionRef = useRef<HTMLDivElement>(null);
   const supplierInputRef = useRef<HTMLInputElement>(null);
+  const xmlInputRef = useRef<HTMLInputElement>(null);
 
   const [formData, setFormData] = useState<Omit<Expense, 'id'>>({
     description: '', supplier: '', dueDate: new Date().toISOString().split('T')[0],
@@ -49,6 +51,12 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
 
   const [selectedNatures, setSelectedNatures] = useState<string[]>(Array.from(NATURES));
   const [showNatureFilter, setShowNatureFilter] = useState(false);
+
+  const [pendingXMLData, setPendingXMLData] = useState<{
+    supplier: string;
+    invoice: string;
+    expenses: Omit<Expense, 'id'>[];
+  } | null>(null);
 
   useEffect(() => {
     setAllSuppliers(db.getSuppliers());
@@ -240,12 +248,78 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     setShowForm(false);
   };
 
+  const handleXMLImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const xmlString = event.target?.result as string;
+      const parsedData = parseNFeXML(xmlString);
+      
+      if (parsedData) {
+        const expensesToSave = convertParsedDataToExpenses(parsedData);
+        setPendingXMLData({
+          supplier: parsedData.supplierName,
+          invoice: parsedData.invoiceNumber,
+          expenses: expensesToSave
+        });
+      } else {
+        alert("❌ Erro ao processar o arquivo XML. Verifique se é uma NF-e válida.");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = ''; // Reset input
+  };
+
+  const confirmXMLImport = () => {
+    if (!pendingXMLData) return;
+
+    const finalSupplier = pendingXMLData.supplier.trim();
+
+    // Auto-create supplier if it doesn't exist
+    const suppliers = db.getSuppliers();
+    if (finalSupplier && !suppliers.some(s => s.name.toLowerCase() === finalSupplier.toLowerCase())) {
+      db.saveSupplier({
+        name: finalSupplier,
+        category: 'Custo da Mercadoria Vendida',
+        contactName: '',
+        contactPhone: '',
+        contactEmail: ''
+      });
+    }
+
+    pendingXMLData.expenses.forEach(exp => {
+      db.saveExpense({
+        ...exp,
+        supplier: finalSupplier
+      });
+    });
+    
+    onSuccess();
+    setPendingXMLData(null);
+  };
+
+  const xmlFilteredSuppliers = useMemo(() => {
+    if (!pendingXMLData?.supplier.trim()) return [];
+    return allSuppliers.filter(s => 
+      s.name.toLowerCase().includes(pendingXMLData.supplier.toLowerCase())
+    ).slice(0, 5);
+  }, [pendingXMLData?.supplier, allSuppliers]);
+
   const toggleNature = (nature: string) => {
     setSelectedNatures(prev => prev.includes(nature) ? prev.filter(n => n !== nature) : [...prev, nature]);
   };
 
   return (
     <div className="flex-1 flex flex-col gap-4 h-full overflow-hidden">
+      <input 
+        type="file" 
+        accept=".xml" 
+        ref={xmlInputRef} 
+        className="hidden" 
+        onChange={handleXMLImport} 
+      />
       <ConfirmationModal 
         isOpen={!!deletingId}
         onClose={() => setDeletingId(null)}
@@ -253,6 +327,91 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         title="Excluir Registro"
         message="Tem certeza que deseja remover esta conta permanentemente?"
       />
+
+      {/* MODAL DE CONFIRMAÇÃO DE IMPORTAÇÃO XML */}
+      {pendingXMLData && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[200] flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-2xl rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-slate-900 p-8 text-white relative">
+              <button 
+                onClick={() => setPendingXMLData(null)}
+                className="absolute top-6 right-6 p-2 hover:bg-white/10 rounded-xl transition-colors"
+              >
+                <X size={24} />
+              </button>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="w-12 h-12 bg-blue-500 rounded-2xl flex items-center justify-center shadow-lg">
+                  <FileUp size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black uppercase tracking-tight">Confirmar Importação XML</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">NF-e: {pendingXMLData.invoice}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-8">
+              <div className="mb-6 relative">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">Fornecedor (Pode ser alterado)</label>
+                <div className="relative mt-1">
+                  <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18}/>
+                  <input 
+                    className="w-full h-12 pl-12 pr-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-black uppercase outline-none focus:border-blue-400 focus:bg-white transition-all" 
+                    value={pendingXMLData.supplier} 
+                    onChange={e => setPendingXMLData({...pendingXMLData, supplier: e.target.value})}
+                  />
+                </div>
+                {xmlFilteredSuppliers.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-slate-200 shadow-2xl rounded-[2rem] z-[300] overflow-hidden p-2">
+                    {xmlFilteredSuppliers.map(s => (
+                      <button 
+                        key={s.id} type="button"
+                        onClick={() => setPendingXMLData({...pendingXMLData, supplier: s.name})}
+                        className="w-full text-left px-5 py-4 hover:bg-blue-50 flex flex-col border-b border-slate-50 last:border-0 rounded-xl"
+                      >
+                        <span className="text-xs font-black text-slate-800 uppercase leading-none">{s.name}</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase mt-1.5">{s.category}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="mb-6">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Lançamentos Identificados ({pendingXMLData.expenses.length})</p>
+                <div className="max-h-60 overflow-y-auto custom-scrollbar border rounded-2xl divide-y">
+                  {pendingXMLData.expenses.map((exp, idx) => (
+                    <div key={idx} className="p-4 flex items-center justify-between hover:bg-slate-50 transition-colors">
+                      <div>
+                        <p className="text-[11px] font-black text-slate-800 uppercase leading-none mb-1">{exp.description}</p>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase">Vencimento: {exp.dueDate.split('-').reverse().join('/')}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-sm font-mono font-black text-slate-900">{formatMoney(exp.value)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setPendingXMLData(null)}
+                  className="flex-1 h-14 bg-slate-100 text-slate-500 rounded-2xl text-[11px] font-black uppercase tracking-widest hover:bg-slate-200 transition-all"
+                >
+                  Cancelar
+                </button>
+                <button 
+                  onClick={confirmXMLImport}
+                  className="flex-1 h-14 bg-blue-600 text-white rounded-2xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-blue-200 hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center gap-2"
+                >
+                  <CheckCircle2 size={20} /> Confirmar Importação
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         <div className="bg-white border p-4 rounded-[1.5rem] shadow-sm flex items-center gap-4 border-l-8 border-l-orange-500">
@@ -276,12 +435,21 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
              <p className="text-lg font-mono font-black text-slate-900 leading-none">{formatMoney(totals.total)}</p>
            </div>
         </div>
-        <button 
-          onClick={() => { if(showForm) resetFormState(); setShowForm(!showForm); }} 
-          className={`col-span-2 lg:col-span-1 text-white rounded-[1.5rem] text-[11px] font-black uppercase flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${showForm ? 'bg-slate-500' : 'bg-blue-600 hover:bg-blue-700'}`}
-        >
-          {showForm ? <X size={20}/> : <Plus size={20}/>} {showForm ? 'Cancelar' : 'Lançar Novo Título'}
-        </button>
+        <div className="col-span-2 lg:col-span-1 flex gap-2">
+          <button 
+            onClick={() => xmlInputRef.current?.click()}
+            className="flex-1 bg-slate-900 text-white rounded-[1.5rem] text-[11px] font-black uppercase flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all hover:bg-slate-800"
+            title="Importar XML de NF-e"
+          >
+            <FileUp size={20}/> Importar XML
+          </button>
+          <button 
+            onClick={() => { if(showForm) resetFormState(); setShowForm(!showForm); }} 
+            className={`flex-1 text-white rounded-[1.5rem] text-[11px] font-black uppercase flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all ${showForm ? 'bg-slate-500' : 'bg-blue-600 hover:bg-blue-700'}`}
+          >
+            {showForm ? <X size={20}/> : <Plus size={20}/>} {showForm ? 'Cancelar' : 'Novo Título'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
