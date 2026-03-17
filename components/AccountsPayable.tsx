@@ -41,6 +41,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
 
   const [formData, setFormData] = useState<Omit<Expense, 'id'>>({
     description: '', supplier: '', dueDate: new Date().toISOString().split('T')[0],
+    purchaseDate: new Date().toISOString().split('T')[0],
     value: 0, nature: 'Outros', costType: 'Variável', status: 'Pendente',
   });
 
@@ -184,6 +185,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       description: expense.description,
       supplier: expense.supplier,
       dueDate: expense.dueDate,
+      purchaseDate: expense.purchaseDate || expense.dueDate,
       value: expense.value,
       nature: expense.nature,
       costType: expense.costType,
@@ -201,6 +203,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     setValueMode('total');
     setFormData({
       description: '', supplier: '', dueDate: new Date().toISOString().split('T')[0],
+      purchaseDate: new Date().toISOString().split('T')[0],
       value: 0, nature: 'Outros', costType: 'Variável', status: 'Pendente',
     });
   };
@@ -511,6 +514,11 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
           <div className="col-span-2">
             <label className="text-[11px] font-black text-slate-400 uppercase ml-1 tracking-wider">Descrição Detalhada</label>
             <input placeholder="Ex: Pagamento referente NF 001" className="w-full h-12 px-5 mt-1 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-blue-400 focus:bg-white transition-all" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} required />
+          </div>
+
+          <div>
+            <label className="text-[11px] font-black text-slate-400 uppercase ml-1 tracking-wider">Data da Compra</label>
+            <input type="date" className="w-full h-12 px-3 mt-1 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-bold outline-none focus:border-blue-400 focus:bg-white transition-all" value={formData.purchaseDate} onChange={e => setFormData({...formData, purchaseDate: e.target.value})} />
           </div>
 
           <div>

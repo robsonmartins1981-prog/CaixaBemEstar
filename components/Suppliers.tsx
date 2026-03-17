@@ -5,7 +5,7 @@ import { db } from '../services/db';
 import { NATURES } from '../constants';
 import { 
   Plus, Trash2, UserPlus, List, Search, ArrowUpDown, ChevronUp, ChevronDown, 
-  Edit2, X, Phone, Mail, User, Users, ArrowLeft, Receipt, CheckCircle2, AlertCircle, Save
+  Edit2, X, Phone, Mail, User, Users, ArrowLeft, Receipt, CheckCircle2, AlertCircle, Save, Clock
 } from 'lucide-react';
 import ConfirmationModal from './ConfirmationModal';
 
@@ -353,7 +353,50 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
  * COMPONENTE DE DETALHE E CRUD DE CONTAS DO FORNECEDOR
  */
 const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: () => void }) => {
-  const [expenses, setExpenses] = useState<Expense[]>(() => db.getExpenses().filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase()));
+  const [allSupplierExpenses, setAllSupplierExpenses] = useState<Expense[]>(() => 
+    db.getExpenses().filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase())
+  );
+  
+  const [dateFilter, setDateFilter] = useState({
+    start: (() => {
+      const d = new Date();
+      d.setDate(1);
+      return d.toISOString().split('T')[0];
+    })(),
+    end: new Date().toISOString().split('T')[0]
+  });
+  const [statusFilter, setStatusFilter] = useState<'TODOS' | 'Pendente' | 'Pago'>('TODOS');
+
+  const filteredExpenses = useMemo(() => {
+    return allSupplierExpenses.filter(e => {
+      const dateToCompare = e.purchaseDate || e.dueDate;
+      const matchDate = dateToCompare >= dateFilter.start && dateToCompare <= dateFilter.end;
+      const matchStatus = statusFilter === 'TODOS' || e.status === statusFilter;
+      return matchDate && matchStatus;
+    }).sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+  }, [allSupplierExpenses, dateFilter, statusFilter]);
+
+  const stats = useMemo(() => {
+    const pago = filteredExpenses.filter(e => e.status === 'Pago').reduce((a,c) => a + c.value, 0);
+    const pendente = filteredExpenses.filter(e => e.status === 'Pendente').reduce((a,c) => a + c.value, 0);
+    const totalPeriodo = pago + pendente;
+    
+    // Total histórico (sem filtros de data do período atual)
+    const totalHistoricoPago = allSupplierExpenses.filter(e => e.status === 'Pago').reduce((a,c) => a + c.value, 0);
+    const totalHistoricoPendente = allSupplierExpenses.filter(e => e.status === 'Pendente').reduce((a,c) => a + c.value, 0);
+
+    return { 
+      pago, 
+      pendente, 
+      totalPeriodo,
+      historico: {
+        pago: totalHistoricoPago,
+        pendente: totalHistoricoPendente,
+        total: totalHistoricoPago + totalHistoricoPendente
+      }
+    };
+  }, [filteredExpenses, allSupplierExpenses]);
+
   const [showQuickForm, setShowQuickForm] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [deletingExpId, setDeletingExpId] = useState<string | null>(null);
@@ -362,20 +405,15 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
     description: '',
     supplier: supplier.name,
     dueDate: new Date().toISOString().split('T')[0],
+    purchaseDate: new Date().toISOString().split('T')[0],
     value: 0,
     nature: (supplier.category as any) || 'Outros',
     costType: 'Variável',
     status: 'Pendente'
   });
 
-  const stats = useMemo(() => {
-    const pago = expenses.filter(e => e.status === 'Pago').reduce((a,c) => a + c.value, 0);
-    const pendente = expenses.filter(e => e.status === 'Pendente').reduce((a,c) => a + c.value, 0);
-    return { pago, pendente, total: pago + pendente };
-  }, [expenses]);
-
   const refreshExpenses = () => {
-    setExpenses(db.getExpenses().filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase()));
+    setAllSupplierExpenses(db.getExpenses().filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase()));
   };
 
   const handleSaveExpense = (e: React.FormEvent) => {
@@ -403,6 +441,7 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
       description: exp.description,
       supplier: exp.supplier,
       dueDate: exp.dueDate,
+      purchaseDate: exp.purchaseDate || exp.dueDate,
       value: exp.value,
       nature: exp.nature,
       costType: exp.costType,
@@ -426,84 +465,165 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
       />
 
       {/* HEADER DETALHE */}
-      <div className="bg-white border border-slate-200 p-6 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm shrink-0">
+      <div className="bg-white border border-slate-200 p-6 rounded-[2rem] flex flex-col xl:flex-row items-center justify-between gap-6 shadow-sm shrink-0">
         <div className="flex items-center gap-5">
-           <button onClick={onBack} className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl transition-all active:scale-90">
+           <button onClick={onBack} className="p-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-2xl transition-all active:scale-90">
              <ArrowLeft size={24}/>
            </button>
            <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Central do Fornecedor</p>
               <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tighter leading-none">{supplier.name}</h2>
-              <p className="text-[11px] font-bold text-blue-600 uppercase mt-1 tracking-widest">{supplier.category}</p>
+              <div className="flex items-center gap-3 mt-1.5">
+                <span className="text-[10px] font-black bg-blue-50 text-blue-600 px-3 py-1 rounded-full uppercase tracking-widest">{supplier.category}</span>
+                {supplier.contactPhone && (
+                  <span className="text-[10px] font-bold text-slate-400 flex items-center gap-1.5">
+                    <Phone size={12}/> {supplier.contactPhone}
+                  </span>
+                )}
+              </div>
            </div>
         </div>
 
-        <div className="flex gap-4">
-           <div className="px-5 py-3 bg-emerald-50 border border-emerald-100 rounded-2xl text-center min-w-[140px]">
-              <p className="text-[9px] font-black text-emerald-600 uppercase mb-1">Total Liquidado</p>
-              <p className="text-lg font-mono font-black text-emerald-700">{formatMoney(stats.pago)}</p>
+        <div className="flex flex-wrap justify-center gap-4">
+           <div className="px-6 py-4 bg-emerald-50 border border-emerald-100 rounded-3xl text-center min-w-[160px] shadow-sm">
+              <p className="text-[10px] font-black text-emerald-600 uppercase mb-1 tracking-widest">Total Pago</p>
+              <p className="text-xl font-mono font-black text-emerald-700">{formatMoney(stats.historico.pago)}</p>
+              <p className="text-[9px] font-bold text-emerald-400 uppercase mt-1">Histórico Completo</p>
            </div>
-           <div className="px-5 py-3 bg-orange-50 border border-orange-100 rounded-2xl text-center min-w-[140px]">
-              <p className="text-[9px] font-black text-orange-600 uppercase mb-1">A Pagar</p>
-              <p className="text-lg font-mono font-black text-orange-700">{formatMoney(stats.pendente)}</p>
+           <div className="px-6 py-4 bg-orange-50 border border-orange-100 rounded-3xl text-center min-w-[160px] shadow-sm">
+              <p className="text-[10px] font-black text-orange-600 uppercase mb-1 tracking-widest">Em Aberto</p>
+              <p className="text-xl font-mono font-black text-orange-700">{formatMoney(stats.historico.pendente)}</p>
+              <p className="text-[9px] font-bold text-orange-400 uppercase mt-1">Total a Liquidar</p>
            </div>
+           <div className="px-6 py-4 bg-slate-900 border border-slate-800 rounded-3xl text-center min-w-[160px] shadow-lg">
+              <p className="text-[10px] font-black text-slate-400 uppercase mb-1 tracking-widest">Gasto Total</p>
+              <p className="text-xl font-mono font-black text-white">{formatMoney(stats.historico.total)}</p>
+              <p className="text-[9px] font-bold text-slate-500 uppercase mt-1">Volume de Compras</p>
+           </div>
+        </div>
+      </div>
+
+      {/* BARRA DE FILTROS */}
+      <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-sm flex flex-wrap items-center justify-between gap-4 shrink-0">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-100">
+            <input 
+              type="date" 
+              className="bg-transparent border-none outline-none text-[10px] font-black uppercase px-2 py-1 text-slate-600"
+              value={dateFilter.start}
+              onChange={e => setDateFilter({...dateFilter, start: e.target.value})}
+            />
+            <span className="text-slate-300 text-[10px]">ATÉ</span>
+            <input 
+              type="date" 
+              className="bg-transparent border-none outline-none text-[10px] font-black uppercase px-2 py-1 text-slate-600"
+              value={dateFilter.end}
+              onChange={e => setDateFilter({...dateFilter, end: e.target.value})}
+            />
+          </div>
+
+          <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200">
+            {(['TODOS', 'Pendente', 'Pago'] as const).map(s => (
+              <button 
+                key={s}
+                onClick={() => setStatusFilter(s)}
+                className={`px-4 py-1.5 rounded-lg text-[9px] font-black uppercase transition-all ${statusFilter === s ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total no Período</p>
+            <p className="text-sm font-mono font-black text-slate-800">{formatMoney(stats.totalPeriodo)}</p>
+          </div>
+          <button 
+            onClick={() => {
+              setEditingExpenseId(null);
+              setFormData({
+                description: '',
+                supplier: supplier.name,
+                dueDate: new Date().toISOString().split('T')[0],
+                purchaseDate: new Date().toISOString().split('T')[0],
+                value: 0,
+                nature: (supplier.category as any) || 'Outros',
+                costType: 'Variável',
+                status: 'Pendente'
+              });
+              setShowQuickForm(!showQuickForm);
+            }}
+            className="h-11 px-6 bg-blue-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center gap-2"
+          >
+            <Plus size={16}/> Novo Lançamento
+          </button>
         </div>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row gap-5 overflow-hidden">
         
         {/* FORMULÁRIO RÁPIDO DE CRUD */}
-        <div className={`w-full lg:w-[380px] bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col shrink-0 overflow-hidden transition-all ${showQuickForm ? 'h-auto opacity-100' : 'h-[64px] opacity-100'}`}>
-          <button 
-            onClick={() => {
-              if (showQuickForm) setEditingExpenseId(null);
-              setShowQuickForm(!showQuickForm);
-            }} 
-            className="w-full h-16 px-6 bg-slate-900 text-white flex items-center justify-between font-black uppercase tracking-widest text-[11px]"
-          >
+        <div className={`w-full lg:w-[380px] bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col shrink-0 overflow-hidden transition-all ${showQuickForm ? 'h-auto opacity-100' : 'hidden'}`}>
+          <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
             <div className="flex items-center gap-3">
               {editingExpenseId ? <Edit2 size={18}/> : <Plus size={18}/>}
-              {editingExpenseId ? 'Editando Título' : 'Lançar Nova Conta'}
+              <h3 className="text-[11px] font-black uppercase tracking-widest">
+                {editingExpenseId ? 'Editando Título' : 'Novo Título'}
+              </h3>
             </div>
-            {showQuickForm ? <X size={20}/> : <ChevronDown size={20}/>}
-          </button>
+            <button onClick={() => setShowQuickForm(false)} className="text-slate-400 hover:text-white transition-colors">
+              <X size={20}/>
+            </button>
+          </div>
           
-          <div className={`p-6 space-y-4 overflow-y-auto custom-scrollbar ${showQuickForm ? 'block' : 'hidden'}`}>
-             <div className="space-y-1.5">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição</label>
+          <div className="p-8 space-y-5 overflow-y-auto custom-scrollbar">
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Descrição do Gasto</label>
                 <input 
                   type="text" required
-                  className="w-full h-11 px-4 bg-slate-50 border border-slate-200 text-sm font-bold rounded-xl outline-none focus:bg-white focus:border-blue-500"
+                  className="w-full h-12 px-5 bg-slate-50 border border-slate-200 text-sm font-bold rounded-2xl outline-none focus:bg-white focus:border-blue-500 shadow-sm transition-all"
                   value={formData.description}
                   onChange={e => setFormData({...formData, description: e.target.value})}
-                  placeholder="NF-e, Serviço, etc..."
+                  placeholder="Ex: NF-e 12345"
                 />
              </div>
              <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1.5">
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Compra</label>
+                  <input 
+                    type="date" required
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 text-xs font-bold rounded-2xl outline-none focus:border-blue-500 shadow-sm transition-all"
+                    value={formData.purchaseDate}
+                    onChange={e => setFormData({...formData, purchaseDate: e.target.value})}
+                  />
+               </div>
+               <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Vencimento</label>
                   <input 
                     type="date" required
-                    className="w-full h-11 px-3 bg-slate-50 border border-slate-200 text-sm font-bold rounded-xl outline-none focus:border-blue-500"
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 text-xs font-bold rounded-2xl outline-none focus:border-blue-500 shadow-sm transition-all"
                     value={formData.dueDate}
                     onChange={e => setFormData({...formData, dueDate: e.target.value})}
                   />
                </div>
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor (R$)</label>
-                  <input 
-                    type="number" step="0.01" required
-                    className="w-full h-11 px-4 bg-slate-50 border border-slate-200 text-sm font-black font-mono rounded-xl outline-none focus:border-blue-500"
-                    value={formData.value || ''}
-                    onChange={e => setFormData({...formData, value: parseFloat(e.target.value) || 0})}
-                  />
-               </div>
+             </div>
+             <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Valor do Título (R$)</label>
+                <input 
+                  type="number" step="0.01" required
+                  className="w-full h-14 px-6 bg-slate-50 border border-slate-200 text-lg font-black font-mono rounded-2xl outline-none focus:border-blue-500 shadow-sm transition-all"
+                  value={formData.value || ''}
+                  onChange={e => setFormData({...formData, value: parseFloat(e.target.value) || 0})}
+                  placeholder="0,00"
+                />
              </div>
              <div className="grid grid-cols-2 gap-4">
-               <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status</label>
+               <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Status Atual</label>
                   <select 
-                    className="w-full h-11 px-3 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase rounded-xl outline-none focus:border-blue-500"
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase rounded-2xl outline-none focus:border-blue-500 shadow-sm transition-all"
                     value={formData.status}
                     onChange={e => setFormData({...formData, status: e.target.value as any})}
                   >
@@ -511,10 +631,10 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
                     <option value="Pago">Pago</option>
                   </select>
                </div>
-               <div className="space-y-1.5">
+               <div className="space-y-2">
                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Natureza</label>
                   <select 
-                    className="w-full h-11 px-3 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase rounded-xl outline-none focus:border-blue-500"
+                    className="w-full h-12 px-4 bg-slate-50 border border-slate-200 text-[10px] font-black uppercase rounded-2xl outline-none focus:border-blue-500 shadow-sm transition-all"
                     value={formData.nature}
                     onChange={e => setFormData({...formData, nature: e.target.value as any})}
                   >
@@ -524,58 +644,78 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
              </div>
              <button 
                onClick={handleSaveExpense}
-               className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[10px] rounded-xl shadow-lg shadow-blue-200 transition-all active:scale-95 flex items-center justify-center gap-2"
+               className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase tracking-widest text-[11px] rounded-2xl shadow-xl shadow-blue-100 transition-all active:scale-95 flex items-center justify-center gap-3"
              >
-               <Save size={18}/> {editingExpenseId ? 'Salvar Alteração' : 'Registrar Título'}
+               <Save size={20}/> {editingExpenseId ? 'Salvar Alteração' : 'Registrar Título'}
              </button>
           </div>
         </div>
 
         {/* LISTAGEM DE CONTAS */}
-        <div className="flex-1 bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
-          <div className="p-5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-            <h3 className="text-[12px] font-black uppercase tracking-widest text-slate-500">Histórico Financeiro Dedicado</h3>
+        <div className="flex-1 bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden flex flex-col">
+          <div className="p-6 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+            <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-500 flex items-center gap-2">
+              <Receipt size={16}/> Histórico de Movimentação
+            </h3>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                <span className="text-[9px] font-black text-slate-400 uppercase">Pago</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+                <span className="text-[9px] font-black text-slate-400 uppercase">Aberto</span>
+              </div>
+            </div>
           </div>
           <div className="flex-1 overflow-auto custom-scrollbar">
             <table className="w-full border-collapse">
-               <thead className="sticky top-0 bg-slate-50 border-b text-[10px] font-black uppercase text-slate-400 z-10">
+               <thead className="sticky top-0 bg-white border-b text-[10px] font-black uppercase text-slate-400 z-10 shadow-sm">
                  <tr>
-                    <th className="px-6 py-4 text-left">Vencimento</th>
-                    <th className="px-6 py-4 text-left">Descrição</th>
-                    <th className="px-6 py-4 text-right">Valor</th>
-                    <th className="px-6 py-4 text-center w-32">Status</th>
-                    <th className="px-6 py-4 text-center w-24">Ações</th>
+                    <th className="px-8 py-5 text-left">Datas (Compra/Venc)</th>
+                    <th className="px-8 py-5 text-left">Descrição / Natureza</th>
+                    <th className="px-8 py-5 text-right">Valor</th>
+                    <th className="px-8 py-5 text-center w-40">Situação</th>
+                    <th className="px-8 py-5 text-center w-32">Ações</th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-slate-100">
-                 {expenses.length > 0 ? expenses.map(exp => (
-                   <tr key={exp.id} className="hover:bg-slate-50 transition-colors group">
-                      <td className="px-6 py-4 text-[13px] font-mono font-black text-slate-700">{exp.dueDate.split('-').reverse().join('/')}</td>
-                      <td className="px-6 py-4">
-                        <p className="text-[13px] font-black text-slate-800 uppercase leading-none mb-1">{exp.description}</p>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{exp.nature}</p>
+                 {filteredExpenses.length > 0 ? filteredExpenses.map(exp => (
+                   <tr key={exp.id} className="hover:bg-blue-50/50 transition-colors group">
+                      <td className="px-8 py-5">
+                        <div className="flex flex-col">
+                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-tighter">Compra: {exp.purchaseDate ? exp.purchaseDate.split('-').reverse().join('/') : '--/--/--'}</span>
+                          <span className="text-[13px] font-mono font-black text-slate-800 mt-1">Venc: {exp.dueDate.split('-').reverse().join('/')}</span>
+                        </div>
                       </td>
-                      <td className="px-6 py-4 text-right text-[14px] font-mono font-black text-slate-900">{formatMoney(exp.value)}</td>
-                      <td className="px-6 py-4 text-center">
+                      <td className="px-8 py-5">
+                        <p className="text-[13px] font-black text-slate-800 uppercase leading-none mb-1.5">{exp.description}</p>
+                        <span className="text-[9px] font-black px-2 py-1 bg-slate-100 text-slate-500 rounded-md uppercase tracking-widest">{exp.nature}</span>
+                      </td>
+                      <td className="px-8 py-5 text-right">
+                        <p className="text-[15px] font-mono font-black text-slate-900">{formatMoney(exp.value)}</p>
+                      </td>
+                      <td className="px-8 py-5 text-center">
                         <button 
                           onClick={() => toggleStatus(exp.id, exp.status)}
-                          className={`w-full py-2 rounded-lg text-[9px] font-black uppercase transition-all border ${exp.status === 'Pago' ? 'bg-emerald-500 border-emerald-400 text-white' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}
+                          className={`w-full py-2.5 rounded-xl text-[10px] font-black uppercase transition-all border-2 flex items-center justify-center gap-2 ${exp.status === 'Pago' ? 'bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-100' : 'bg-white border-slate-200 text-slate-400 hover:border-orange-300 hover:text-orange-500'}`}
                         >
+                          {exp.status === 'Pago' ? <CheckCircle2 size={14}/> : <Clock size={14}/>}
                           {exp.status}
                         </button>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-8 py-5">
                         <div className="flex justify-center gap-2">
-                          <button onClick={() => startEdit(exp)} className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all"><Edit2 size={16}/></button>
-                          <button onClick={() => setDeletingExpId(exp.id)} className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={16}/></button>
+                          <button onClick={() => startEdit(exp)} className="p-3 text-slate-300 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all"><Edit2 size={18}/></button>
+                          <button onClick={() => setDeletingExpId(exp.id)} className="p-3 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={18}/></button>
                         </div>
                       </td>
                    </tr>
                  )) : (
                    <tr>
-                      <td colSpan={5} className="py-24 text-center grayscale opacity-30">
-                        <AlertCircle size={48} className="mx-auto mb-4 text-slate-400"/>
-                        <p className="text-[11px] font-black uppercase tracking-widest">Nenhuma conta vinculada encontrada</p>
+                      <td colSpan={5} className="py-32 text-center grayscale opacity-30">
+                        <AlertCircle size={64} className="mx-auto mb-4 text-slate-300"/>
+                        <p className="text-[11px] font-black uppercase tracking-[0.3em] text-slate-400">Nenhum registro encontrado para este filtro</p>
                       </td>
                    </tr>
                  )}

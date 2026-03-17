@@ -71,9 +71,10 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const selectedDate = new Date(baseDate + 'T12:00:00');
     if (isNaN(selectedDate.getTime())) return null;
     
-    const filterFn = (itemDate: string) => {
-      if (periodType === 'Custom') return itemDate >= startDate && itemDate <= endDate;
-      const d = new Date(itemDate + 'T12:00:00');
+    const filterFn = (itemDate: string, purchaseDate?: string) => {
+      const dateToUse = purchaseDate || itemDate;
+      if (periodType === 'Custom') return dateToUse >= startDate && dateToUse <= endDate;
+      const d = new Date(dateToUse + 'T12:00:00');
       if (periodType === 'Diário') return d.toDateString() === selectedDate.toDateString();
       if (periodType === 'Mensal') return d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
       if (periodType === 'Anual') return d.getFullYear() === selectedDate.getFullYear();
@@ -81,7 +82,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     };
 
     const periodEntries = entries.filter(e => filterFn(e.date));
-    const paidPeriodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate));
+    const paidPeriodExpenses = expenses.filter(e => e.status === 'Pago' && filterFn(e.dueDate, e.purchaseDate));
     
     const totalOutPending = expenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
 
@@ -96,7 +97,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const custoTotalReal = custoOperacional;
     const lucroLiquido = receitaBruta - custoTotalReal;
 
-    const allPeriodExpenses = expenses.filter(e => filterFn(e.dueDate));
+    const allPeriodExpenses = expenses.filter(e => filterFn(e.dueDate, e.purchaseDate));
     const totalObrigacoes = allPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
     const compositionMap: Record<string, number> = {};
     let totalFiltered = 0;
@@ -111,7 +112,12 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
 
     return {
       dre: { receitaBruta, faturamento, custoOperacional, custoTotalReal, lucroLiquido, totalOutPending },
-      audit: { items: allPeriodExpenses.filter(e => selectedNatures.includes(e.nature)).sort((a, b) => a.dueDate.localeCompare(b.dueDate)), compositionData, totalObrigacoes }
+      audit: { 
+        items: allPeriodExpenses.filter(e => selectedNatures.includes(e.nature)).sort((a, b) => (a.purchaseDate || a.dueDate).localeCompare(b.purchaseDate || b.dueDate)), 
+        compositionData, 
+        totalObrigacoes,
+        totalFiltered
+      }
     };
   }, [entries, expenses, periodType, baseDate, startDate, endDate, selectedNatures]);
 
@@ -241,15 +247,76 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
             </div>
           </div>
         ) : (
-          <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
-             <div className="bg-white border border-slate-200 p-8 rounded-2xl shadow-sm flex items-center gap-6">
-                <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0"><Receipt size={32}/></div>
-                <div>
-                   <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Geral de Obrigações (Competência)</p>
-                   <p className="text-3xl font-mono font-black text-slate-900">{formatMoney(analytics.audit.totalObrigacoes)}</p>
+          <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500 pb-10">
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm flex items-center gap-6">
+                  <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0"><Receipt size={32}/></div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Total de Obrigações (Período)</p>
+                    <p className="text-3xl font-mono font-black text-slate-900">{formatMoney(analytics.audit.totalObrigacoes)}</p>
+                  </div>
+                </div>
+                <div className="bg-white border border-slate-200 p-8 rounded-[2.5rem] shadow-sm flex items-center gap-6">
+                  <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center shadow-inner shrink-0"><BarChart3 size={32}/></div>
+                  <div>
+                    <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Filtrado por Natureza</p>
+                    <p className="text-3xl font-mono font-black text-emerald-600">{formatMoney(analytics.audit.totalFiltered)}</p>
+                  </div>
                 </div>
              </div>
-             {/* Outros cards da Auditoria omitidos para brevidade, mas preservados no código original */}
+
+             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="lg:col-span-1 bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm">
+                   <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-6 border-b pb-4">Composição por Natureza</h4>
+                   <div className="space-y-4">
+                      {analytics.audit.compositionData.map((item, idx) => (
+                        <div key={idx} className="space-y-2">
+                           <div className="flex justify-between items-center text-[11px] font-black uppercase">
+                              <span className="text-slate-600 truncate mr-2">{item.nature}</span>
+                              <span className="text-slate-900 font-mono">{formatMoney(item.value)}</span>
+                           </div>
+                           <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="h-full bg-blue-500 rounded-full" style={{ width: `${item.percent * 100}%` }}></div>
+                           </div>
+                           <p className="text-[9px] font-bold text-slate-400 text-right uppercase">{formatPercent(item.percent)} do total</p>
+                        </div>
+                      ))}
+                   </div>
+                </div>
+
+                <div className="lg:col-span-2 bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm flex flex-col">
+                   <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-6 border-b pb-4">Detalhamento de Títulos</h4>
+                   <div className="flex-1 overflow-auto custom-scrollbar max-h-[500px]">
+                      <table className="w-full border-collapse">
+                        <thead className="sticky top-0 bg-white border-b text-[9px] font-black uppercase text-slate-400">
+                          <tr>
+                            <th className="px-4 py-3 text-left">Data</th>
+                            <th className="px-4 py-3 text-left">Fornecedor / Descrição</th>
+                            <th className="px-4 py-3 text-right">Valor</th>
+                            <th className="px-4 py-3 text-center">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {analytics.audit.items.map(item => (
+                            <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                              <td className="px-4 py-4 text-[11px] font-mono font-bold text-slate-500">{(item.purchaseDate || item.dueDate).split('-').reverse().join('/')}</td>
+                              <td className="px-4 py-4">
+                                <p className="text-[11px] font-black text-slate-800 uppercase leading-none mb-1">{item.supplier}</p>
+                                <p className="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[200px]">{item.description}</p>
+                              </td>
+                              <td className="px-4 py-4 text-right text-[12px] font-mono font-black text-slate-900">{formatMoney(item.value)}</td>
+                              <td className="px-4 py-4 text-center">
+                                <span className={`px-2 py-1 rounded-md text-[8px] font-black uppercase ${item.status === 'Pago' ? 'bg-emerald-100 text-emerald-600' : 'bg-orange-100 text-orange-600'}`}>
+                                  {item.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                   </div>
+                </div>
+             </div>
           </div>
         )}
       </div>

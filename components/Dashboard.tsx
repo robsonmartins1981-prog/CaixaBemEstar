@@ -59,9 +59,10 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
       return matchDate && matchShift;
     });
 
-    const filteredExpenses = expenses.filter(e => 
-      e.dueDate >= finalStart && e.dueDate <= finalEnd
-    );
+    const filteredExpenses = expenses.filter(e => {
+      const dateToFilter = e.purchaseDate || e.dueDate;
+      return dateToFilter >= finalStart && dateToFilter <= finalEnd;
+    });
 
     // 2. Cálculos de Faturamento Respeitando Toggles de Modalidade
     const faturamentoRaw = {
@@ -78,9 +79,20 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
       (paymentFilters.credit ? faturamentoRaw.credito : 0);
 
     const totalOutPaid = filteredExpenses.filter(e => e.status === 'Pago').reduce((acc, e) => acc + e.value, 0);
-    const totalOutPending = expenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
+    const totalOutPendingInPeriod = filteredExpenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
+    const totalOutPendingGlobal = expenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
     
     const netBalance = totalIn - totalOutPaid;
+
+    // 2.1 Gastos por Natureza
+    const spendingByNature = filteredExpenses.reduce((acc, exp) => {
+      acc[exp.nature] = (acc[exp.nature] || 0) + exp.value;
+      return acc;
+    }, {} as Record<string, number>);
+
+    const sortedSpendingByNature = Object.entries(spendingByNature)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
 
     // 3. Média Diária
     const uniqueDaysCount = new Set(filteredEntries.map(e => e.date)).size;
@@ -113,8 +125,9 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     });
 
     filteredExpenses.filter(exp => exp.status === 'Pago').forEach(exp => {
-      if (timelineMap[exp.dueDate]) {
-        timelineMap[exp.dueDate].saidas += exp.value;
+      const dateToUse = exp.purchaseDate || exp.dueDate;
+      if (timelineMap[dateToUse]) {
+        timelineMap[dateToUse].saidas += exp.value;
       }
     });
 
@@ -127,10 +140,11 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     ].filter(d => d.value > 0);
 
     return { 
-      totalIn, totalOutPaid, totalOutPending, netBalance, averageDaily, uniqueDaysCount,
+      totalIn, totalOutPaid, totalOutPendingGlobal, totalOutPendingInPeriod, netBalance, averageDaily, uniqueDaysCount,
       faturamento: faturamentoRaw,
       chartData: Object.values(timelineMap),
       mixData,
+      spendingByNature: sortedSpendingByNature,
       label: dateMode === 'CURRENT_MONTH' ? 'Mês Corrente' : 'Personalizado'
     };
   }, [entries, expenses, dateStart, dateEnd, selectedShifts, paymentFilters, dateMode]);
@@ -237,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         <MainKPICard title="Faturamento Bruto" value={stats.totalIn} icon={<ArrowUpRight className="text-emerald-500"/>} bg="bg-white" />
         <MainKPICard title="Média Diária" value={stats.averageDaily} icon={<TrendingUp className="text-cyan-500" size={18}/>} bg="bg-white" />
         <MainKPICard title="Despesas Pagas" value={stats.totalOutPaid} icon={<CheckCircle2 className="text-blue-500" size={18}/>} bg="bg-white" />
-        <MainKPICard title="Contas Pendentes" value={stats.totalOutPending} icon={<AlertCircle className="text-orange-500" size={18}/>} bg="bg-white" />
+        <MainKPICard title="Contas Pendentes" value={stats.totalOutPendingGlobal} icon={<AlertCircle className="text-orange-500" size={18}/>} bg="bg-white" />
         <MainKPICard title="Saldo Líquido" value={stats.netBalance} icon={<Layers className="text-white" size={18}/>} bg="bg-slate-900" isDark />
       </div>
 
@@ -291,7 +305,7 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         </div>
       </div>
 
-      {/* GRÁFICOS */}
+      {/* GRÁFICOS E GASTOS POR NATUREZA */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm min-h-[400px] flex flex-col">
           <div className="mb-6 flex items-center justify-between">
@@ -327,41 +341,70 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm flex flex-col">
-          <div className="mb-8 text-center">
-            <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-800">Mix de Recebíveis</h3>
-            <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Distribuição percentual ativa</p>
+        <div className="flex flex-col gap-6">
+          <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm flex flex-col">
+            <div className="mb-8 text-center">
+              <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-800">Mix de Recebíveis</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Distribuição percentual ativa</p>
+            </div>
+            <div className="flex-1 flex items-center justify-center">
+               <ResponsiveContainer width="100%" height={240}>
+                  <PieChart>
+                    <Pie
+                      data={stats.mixData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={85}
+                      paddingAngle={8}
+                      dataKey="value"
+                    >
+                      {stats.mixData.map((entry: any, index: number) => (
+                        <Cell key={`cell-${index}`} fill={entry.active ? entry.color : '#f1f5f9'} stroke="none" />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(val: number) => formatMoney(val)} />
+                  </PieChart>
+               </ResponsiveContainer>
+            </div>
+            <div className="mt-6 space-y-2">
+               {stats.mixData.map((item: any, idx: number) => (
+                 <div key={idx} className={`flex items-center justify-between text-[11px] font-bold ${item.active ? 'opacity-100' : 'opacity-30'}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-2.5 h-2.5 rounded-sm" style={{backgroundColor: item.color}}></div>
+                      <span className="text-slate-500 uppercase tracking-tight">{item.name}</span>
+                    </div>
+                    <span className="font-mono text-slate-800">{formatPercent(item.percent || 0)}</span>
+                 </div>
+               ))}
+            </div>
           </div>
-          <div className="flex-1 flex items-center justify-center">
-             <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie
-                    data={stats.mixData}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={85}
-                    paddingAngle={8}
-                    dataKey="value"
-                  >
-                    {stats.mixData.map((entry: any, index: number) => (
-                      <Cell key={`cell-${index}`} fill={entry.active ? entry.color : '#f1f5f9'} stroke="none" />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(val: number) => formatMoney(val)} />
-                </PieChart>
-             </ResponsiveContainer>
-          </div>
-          <div className="mt-6 space-y-2">
-             {stats.mixData.map((item: any, idx: number) => (
-               <div key={idx} className={`flex items-center justify-between text-[11px] font-bold ${item.active ? 'opacity-100' : 'opacity-30'}`}>
-                  <div className="flex items-center gap-2">
-                    <div className="w-2.5 h-2.5 rounded-sm" style={{backgroundColor: item.color}}></div>
-                    <span className="text-slate-500 uppercase tracking-tight">{item.name}</span>
+
+          <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 shadow-sm flex flex-col">
+            <div className="mb-6">
+              <h3 className="text-[12px] font-black uppercase tracking-[0.2em] text-slate-800">Gastos por Natureza</h3>
+              <p className="text-[10px] font-bold text-slate-400 uppercase mt-1">Total no Período: <span className="text-rose-500">{formatMoney(stats.totalOutPaid + stats.totalOutPendingInPeriod)}</span></p>
+            </div>
+            <div className="space-y-4 max-h-[300px] overflow-y-auto custom-scrollbar pr-2">
+              {stats.spendingByNature.length > 0 ? stats.spendingByNature.map((item, idx) => (
+                <div key={idx} className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-wider">
+                    <span className="text-slate-500">{item.name}</span>
+                    <span className="text-slate-900">{formatMoney(item.value)}</span>
                   </div>
-                  <span className="font-mono text-slate-800">{formatPercent(item.percent || 0)}</span>
-               </div>
-             ))}
+                  <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-rose-400 rounded-full" 
+                      style={{ width: `${(item.value / (stats.totalOutPaid + stats.totalOutPendingInPeriod)) * 100}%` }}
+                    ></div>
+                  </div>
+                </div>
+              )) : (
+                <div className="py-8 text-center opacity-30">
+                  <p className="text-[10px] font-black uppercase tracking-widest">Sem gastos no período</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

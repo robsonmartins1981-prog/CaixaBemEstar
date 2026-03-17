@@ -37,6 +37,7 @@ export interface Expense {
   description: string;
   supplier: string;
   dueDate: string;
+  purchaseDate?: string;
   value: number;
   nature: ExpenseNature;
   costType: CostType;
