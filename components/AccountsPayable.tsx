@@ -60,7 +60,11 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
   } | null>(null);
 
   useEffect(() => {
-    setAllSuppliers(db.getSuppliers());
+    const loadSuppliers = async () => {
+      const data = await db.getSuppliers();
+      setAllSuppliers(data);
+    };
+    loadSuppliers();
     const handleClickOutside = (event: MouseEvent) => {
       if (suggestionRef.current && !suggestionRef.current.contains(event.target as Node)) {
         setShowSuggestions(false);
@@ -208,16 +212,16 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const trimmedSupplier = formData.supplier.trim();
     const expenseToSave = { ...formData, supplier: trimmedSupplier };
 
     // Auto-create supplier if it doesn't exist
-    const suppliers = db.getSuppliers();
+    const suppliers = await db.getSuppliers();
     if (trimmedSupplier && !suppliers.some(s => s.name.toLowerCase() === trimmedSupplier.toLowerCase())) {
-      db.saveSupplier({
+      await db.saveSupplier({
         name: trimmedSupplier,
         category: formData.nature,
         contactName: '',
@@ -227,7 +231,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     }
 
     if (editingId) {
-      db.updateExpense(editingId, expenseToSave);
+      await db.updateExpense(editingId, expenseToSave);
     } else if (isInstallment && installmentCount > 1) {
       const valuePerParcel = valueMode === 'total' 
         ? Math.round((expenseToSave.value / installmentCount) * 100) / 100
@@ -236,7 +240,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       const baseDescription = expenseToSave.description;
       for (let i = 0; i < installmentCount; i++) {
         const parcelDate = addDays(expenseToSave.dueDate, i * intervalDays);
-        db.saveExpense({
+        await db.saveExpense({
           ...expenseToSave,
           description: `${baseDescription} (${i + 1}/${installmentCount})`,
           dueDate: parcelDate,
@@ -244,7 +248,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
         });
       }
     } else {
-      db.saveExpense(expenseToSave);
+      await db.saveExpense(expenseToSave);
     }
     onSuccess();
     resetFormState();
@@ -275,15 +279,15 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     e.target.value = ''; // Reset input
   };
 
-  const confirmXMLImport = () => {
+  const confirmXMLImport = async () => {
     if (!pendingXMLData) return;
 
     const finalSupplier = pendingXMLData.supplier.trim();
 
     // Auto-create supplier if it doesn't exist
-    const suppliers = db.getSuppliers();
+    const suppliers = await db.getSuppliers();
     if (finalSupplier && !suppliers.some(s => s.name.toLowerCase() === finalSupplier.toLowerCase())) {
-      db.saveSupplier({
+      await db.saveSupplier({
         name: finalSupplier,
         category: 'Custo da Mercadoria Vendida',
         contactName: '',
@@ -292,12 +296,12 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       });
     }
 
-    pendingXMLData.expenses.forEach(exp => {
-      db.saveExpense({
+    for (const exp of pendingXMLData.expenses) {
+      await db.saveExpense({
         ...exp,
         supplier: finalSupplier
       });
-    });
+    }
     
     onSuccess();
     setPendingXMLData(null);
@@ -326,7 +330,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
       <ConfirmationModal 
         isOpen={!!deletingId}
         onClose={() => setDeletingId(null)}
-        onConfirm={() => { db.deleteExpense(deletingId!); onSuccess(); setDeletingId(null); }}
+        onConfirm={async () => { await db.deleteExpense(deletingId!); onSuccess(); setDeletingId(null); }}
         title="Excluir Registro"
         message="Tem certeza que deseja remover esta conta permanentemente?"
       />
@@ -675,7 +679,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                   </td>
                   <td className="px-6 py-5 text-right font-mono font-black text-sm text-slate-900">{formatMoney(exp.value)}</td>
                   <td className="px-6 py-5 text-center">
-                    <button onClick={() => { db.updateExpenseStatus(exp.id, exp.status === 'Pendente' ? 'Pago' : 'Pendente'); onSuccess(); }} className={`w-full py-2.5 rounded-[1rem] text-[10px] font-black uppercase border ${exp.status === 'Pago' ? 'bg-green-500 border-green-400 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}>
+                    <button onClick={async () => { await db.updateExpenseStatus(exp.id, exp.status === 'Pendente' ? 'Pago' : 'Pendente'); onSuccess(); }} className={`w-full py-2.5 rounded-[1rem] text-[10px] font-black uppercase border ${exp.status === 'Pago' ? 'bg-green-500 border-green-400 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:bg-slate-50'}`}>
                       {exp.status}
                     </button>
                   </td>

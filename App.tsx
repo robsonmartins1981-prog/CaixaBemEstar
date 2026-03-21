@@ -7,7 +7,9 @@ import AccountsPayable from './components/AccountsPayable';
 import Suppliers from './components/Suppliers';
 import Reports from './components/Reports';
 import ImportData from './components/ImportData';
+import Login from './components/Login';
 import { db } from './services/db';
+import { auth, onAuthStateChanged, User } from './firebase';
 import { CashEntry, Expense, Supplier } from './types';
 
 const App: React.FC = () => {
@@ -15,20 +17,58 @@ const App: React.FC = () => {
   const [entries, setEntries] = useState<CashEntry[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [user, setUser] = useState<User | null>(null);
+  const [isDemo, setIsDemo] = useState(localStorage.getItem('isDemoMode') === 'true');
+  const [loading, setLoading] = useState(true);
 
-  const loadData = () => {
+  const loadData = async () => {
+    if (!user && !isDemo) return;
     try {
-      setEntries(db.getEntries());
-      setExpenses(db.getExpenses());
-      setSuppliers(db.getSuppliers());
+      const [entriesData, expensesData, suppliersData] = await Promise.all([
+        db.getEntries(),
+        db.getExpenses(),
+        db.getSuppliers()
+      ]);
+      setEntries(entriesData);
+      setExpenses(expensesData);
+      setSuppliers(suppliersData);
     } catch (e) {
       console.error("Erro ao carregar dados do banco:", e);
     }
   };
 
   useEffect(() => {
-    loadData();
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        localStorage.removeItem('isDemoMode');
+        setIsDemo(false);
+      }
+      setLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (user || isDemo) {
+      loadData();
+    }
+  }, [user, isDemo]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0f172a]">
+        <div className="w-12 h-12 border-4 border-green-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    );
+  }
+
+  if (!user && !isDemo) {
+    return <Login onLoginSuccess={() => {
+      setIsDemo(localStorage.getItem('isDemoMode') === 'true');
+      loadData();
+    }} />;
+  }
 
   const renderContent = () => {
     switch (activeTab) {
@@ -57,3 +97,4 @@ const App: React.FC = () => {
 };
 
 export default App;
+

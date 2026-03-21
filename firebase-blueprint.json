@@ -1,0 +1,83 @@
+{
+  "entities": {
+    "CashEntry": {
+      "title": "Entrada de Caixa",
+      "description": "Registro de fechamento de caixa por turno",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "code": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "shift": { "type": "string", "enum": ["CAIXA 01 (MANHÃ)", "CAIXA 02 (TARDE)", "CAIXA 03 (NOITE)"] },
+        "cash": { "type": "number" },
+        "credit": { "type": "number" },
+        "debit": { "type": "number" },
+        "pix": { "type": "number" },
+        "uid": { "type": "string", "description": "ID do usuário proprietário" }
+      },
+      "required": ["date", "shift", "uid"]
+    },
+    "Expense": {
+      "title": "Despesa",
+      "description": "Registro de conta a pagar ou paga",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "description": { "type": "string" },
+        "supplier": { "type": "string" },
+        "dueDate": { "type": "string", "format": "date" },
+        "purchaseDate": { "type": "string", "format": "date" },
+        "value": { "type": "number" },
+        "nature": { "type": "string" },
+        "costType": { "type": "string", "enum": ["Fixo", "Variável"] },
+        "status": { "type": "string", "enum": ["Pendente", "Pago"] },
+        "uid": { "type": "string", "description": "ID do usuário proprietário" }
+      },
+      "required": ["description", "supplier", "dueDate", "value", "nature", "costType", "status", "uid"]
+    },
+    "Supplier": {
+      "title": "Fornecedor",
+      "description": "Cadastro de fornecedor",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "contactName": { "type": "string" },
+        "contactPhone": { "type": "string" },
+        "contactEmail": { "type": "string" },
+        "uid": { "type": "string", "description": "ID do usuário proprietário" }
+      },
+      "required": ["name", "category", "uid"]
+    },
+    "CardRates": {
+      "title": "Taxas de Cartão",
+      "description": "Configuração de taxas de cartão por usuário",
+      "type": "object",
+      "properties": {
+        "debit": { "type": "number" },
+        "credit": { "type": "number" },
+        "uid": { "type": "string" }
+      },
+      "required": ["debit", "credit", "uid"]
+    }
+  },
+  "firestore": {
+    "/caixa/{entryId}": {
+      "schema": "CashEntry",
+      "description": "Coleção de entradas de caixa"
+    },
+    "/contas/{expenseId}": {
+      "schema": "Expense",
+      "description": "Coleção de despesas"
+    },
+    "/fornecedores/{supplierId}": {
+      "schema": "Supplier",
+      "description": "Coleção de fornecedores"
+    },
+    "/configuracoes/{userId}": {
+      "schema": "CardRates",
+      "description": "Configurações de taxas por usuário"
+    }
+  }
+}

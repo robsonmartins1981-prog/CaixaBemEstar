@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /caixa/{entryId}
+    // Fields:
+    //   - id: string
+    //   - code: string
+    //   - date: string (format: date)
+    //   - shift: string (enum: ["CAIXA 01 (MANHÃ)", "CAIXA 02 (TARDE)", "CAIXA 03 (NOITE)"])
+    //   - cash: number
+    //   - credit: number
+    //   - debit: number
+    //   - pix: number
+    //   - uid: string (required)
+    //
+    // Collection: /contas/{expenseId}
+    // Fields:
+    //   - id: string
+    //   - description: string
+    //   - supplier: string
+    //   - dueDate: string (format: date)
+    //   - purchaseDate: string (format: date, optional)
+    //   - value: number
+    //   - nature: string
+    //   - costType: string (enum: ["Fixo", "Variável"])
+    //   - status: string (enum: ["Pendente", "Pago"])
+    //   - uid: string (required)
+    //
+    // Collection: /fornecedores/{supplierId}
+    // Fields:
+    //   - id: string
+    //   - name: string
+    //   - category: string
+    //   - contactName: string (optional)
+    //   - contactPhone: string (optional)
+    //   - contactEmail: string (optional)
+    //   - uid: string (required)
+    //
+    // Collection: /configuracoes/{userId}
+    // Fields:
+    //   - debit: number
+    //   - credit: number
+    //   - uid: string (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.uid;
+    }
+    
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == request.auth.uid;
+    }
+    
+    function uidNotModified() {
+      return !('uid' in request.resource.data) || request.resource.data.uid == resource.data.uid;
+    }
+    
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+    
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "robsonmartins1981@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isValidCashEntry(data) {
+      return data.date is string &&
+             data.shift in ["CAIXA 01 (MANHÃ)", "CAIXA 02 (TARDE)", "CAIXA 03 (NOITE)"] &&
+             data.cash is number &&
+             data.credit is number &&
+             data.debit is number &&
+             data.pix is number &&
+             data.uid == request.auth.uid;
+    }
+
+    function isValidExpense(data) {
+      return data.description is string && data.description.size() > 0 && data.description.size() < 200 &&
+             data.supplier is string && data.supplier.size() > 0 && data.supplier.size() < 100 &&
+             data.dueDate is string &&
+             data.value is number && data.value >= 0 &&
+             data.nature is string &&
+             data.costType in ["Fixo", "Variável"] &&
+             data.status in ["Pendente", "Pago"] &&
+             data.uid == request.auth.uid;
+    }
+
+    function isValidSupplier(data) {
+      return data.name is string && data.name.size() > 0 && data.name.size() < 100 &&
+             data.category is string &&
+             data.uid == request.auth.uid;
+    }
+
+    function isValidCardRates(data) {
+      return data.debit is number && data.debit >= 0 && data.debit <= 100 &&
+             data.credit is number && data.credit >= 0 && data.credit <= 100 &&
+             data.uid == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /caixa/{entryId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidCashEntry(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidCashEntry(request.resource.data) && uidNotModified();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /contas/{expenseId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidExpense(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidExpense(request.resource.data) && uidNotModified();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /fornecedores/{supplierId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidSupplier(request.resource.data) && uidUnchanged();
+      allow update: if isDocOwner() && isValidSupplier(request.resource.data) && uidNotModified();
+      allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /configuracoes/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId) && isValidCardRates(request.resource.data) && uidUnchanged();
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isAuthenticated() && isOwner(userId) && request.resource.data.role == 'user';
+      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role);
+    }
+  }
+}

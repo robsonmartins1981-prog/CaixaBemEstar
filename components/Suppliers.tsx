@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Supplier, Expense } from '../types';
 import { db } from '../services/db';
 import { NATURES } from '../constants';
@@ -33,7 +33,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortConfig, setSortConfig] = useState<{ key: keyof Supplier, direction: 'asc' | 'desc' } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const nameTrimmed = formData.name.trim();
     if (!nameTrimmed) return;
@@ -47,7 +47,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
         });
         return;
       }
-      db.updateSupplier(editingId, { ...formData, name: nameTrimmed });
+      await db.updateSupplier(editingId, { ...formData, name: nameTrimmed });
     } else {
       const exists = suppliers.some(s => s.name.toLowerCase() === nameTrimmed.toLowerCase());
       if (exists) {
@@ -57,7 +57,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
         });
         return;
       }
-      db.saveSupplier({ ...formData, name: nameTrimmed });
+      await db.saveSupplier({ ...formData, name: nameTrimmed });
     }
     
     resetForm();
@@ -80,10 +80,10 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
     setFormData({ name: '', category: 'Outros', contactName: '', contactPhone: '', contactEmail: '' });
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!deletingSupplier) return;
     
-    const expenses = db.getExpenses();
+    const expenses = await db.getExpenses();
     const hasExpenses = expenses.some(exp => exp.supplier.toLowerCase() === deletingSupplier.name.toLowerCase());
     
     if (hasExpenses) {
@@ -95,7 +95,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
       return;
     }
 
-    db.deleteSupplier(deletingSupplier.id);
+    await db.deleteSupplier(deletingSupplier.id);
     onSuccess();
     setDeletingSupplier(null);
   };
@@ -353,9 +353,19 @@ const Suppliers: React.FC<SuppliersProps> = ({ onSuccess, suppliers }) => {
  * COMPONENTE DE DETALHE E CRUD DE CONTAS DO FORNECEDOR
  */
 const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: () => void }) => {
-  const [allSupplierExpenses, setAllSupplierExpenses] = useState<Expense[]>(() => 
-    db.getExpenses().filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase())
-  );
+  const [allSupplierExpenses, setAllSupplierExpenses] = useState<Expense[]>([]);
+  const [loading, setLoading] = useState(true);
+  
+  const refreshExpenses = async () => {
+    setLoading(true);
+    const expenses = await db.getExpenses();
+    setAllSupplierExpenses(expenses.filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase()));
+    setLoading(false);
+  };
+
+  useEffect(() => {
+    refreshExpenses();
+  }, [supplier.name]);
   
   const [dateFilter, setDateFilter] = useState({
     start: (() => {
@@ -412,27 +422,23 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
     status: 'Pendente'
   });
 
-  const refreshExpenses = () => {
-    setAllSupplierExpenses(db.getExpenses().filter(e => e.supplier.toLowerCase() === supplier.name.toLowerCase()));
-  };
-
-  const handleSaveExpense = (e: React.FormEvent) => {
+  const handleSaveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     const expenseToSave = { ...formData, supplier: supplier.name.trim() };
     if (editingExpenseId) {
-      db.updateExpense(editingExpenseId, expenseToSave);
+      await db.updateExpense(editingExpenseId, expenseToSave);
     } else {
-      db.saveExpense(expenseToSave);
+      await db.saveExpense(expenseToSave);
     }
     setEditingExpenseId(null);
     setShowQuickForm(false);
     setFormData({ ...formData, description: '', value: 0 });
-    refreshExpenses();
+    await refreshExpenses();
   };
 
-  const toggleStatus = (id: string, current: string) => {
-    db.updateExpenseStatus(id, current === 'Pago' ? 'Pendente' : 'Pago');
-    refreshExpenses();
+  const toggleStatus = async (id: string, current: string) => {
+    await db.updateExpenseStatus(id, current === 'Pago' ? 'Pendente' : 'Pago');
+    await refreshExpenses();
   };
 
   const startEdit = (exp: Expense) => {
@@ -455,10 +461,10 @@ const SupplierDetailView = ({ supplier, onBack }: { supplier: Supplier, onBack: 
       <ConfirmationModal 
         isOpen={!!deletingExpId}
         onClose={() => setDeletingExpId(null)}
-        onConfirm={() => {
-          db.deleteExpense(deletingExpId!);
+        onConfirm={async () => {
+          await db.deleteExpense(deletingExpId!);
           setDeletingExpId(null);
-          refreshExpenses();
+          await refreshExpenses();
         }}
         title="Remover Título"
         message="Deseja excluir permanentemente este registro financeiro?"

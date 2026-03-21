@@ -86,14 +86,14 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
     dateRef.current?.focus();
   };
 
-  const validateAndSave = () => {
+  const validateAndSave = async () => {
     if (!formData.date || !formData.shift) {
       dateRef.current?.focus();
       return;
     }
     
-    if (editingId) db.updateEntry(editingId, formData);
-    else db.saveEntry({ ...formData, id: db.generateId() } as any);
+    if (editingId) await db.updateEntry(editingId, formData);
+    else await db.saveEntry({ ...formData, id: db.generateId() } as any);
     
     onSuccess();
     setEditingId(null);
@@ -120,7 +120,7 @@ const CashEntryForm: React.FC<CashEntryFormProps> = ({ onSuccess, entries }) => 
       <ConfirmationModal 
         isOpen={!!deletingId}
         onClose={() => setDeletingId(null)}
-        onConfirm={() => { db.deleteEntry(deletingId!); onSuccess(); setDeletingId(null); }}
+        onConfirm={async () => { await db.deleteEntry(deletingId!); onSuccess(); setDeletingId(null); }}
         title="Excluir Lançamento"
         message="Deseja realmente remover este registro de caixa?"
       />

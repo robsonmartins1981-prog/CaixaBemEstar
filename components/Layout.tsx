@@ -4,10 +4,11 @@ import { ICONS } from '../constants';
 import { 
   Menu, LayoutGrid, Calculator, FileUp, Users, 
   HardDriveDownload, HardDriveUpload, Database, 
-  X, CheckCircle2, AlertTriangle
+  X, CheckCircle2, AlertTriangle, LogOut
 } from 'lucide-react';
 import { db } from '../services/db';
 import { syncService } from '../services/syncService';
+import { auth, logout } from '../firebase';
 import ConfirmationModal from './ConfirmationModal';
 
 interface LayoutProps {
@@ -24,6 +25,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
   const [isSyncing, setIsSyncing] = useState(false);
   
   const restoreInputRef = useRef<HTMLInputElement>(null);
+  const user = auth.currentUser;
+  const isDemo = localStorage.getItem('isDemoMode') === 'true';
 
   const menuItems = [
     { id: 'dashboard', label: 'Resumo GERAL', icon: <LayoutGrid size={20}/> },
@@ -39,9 +42,24 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
     setTimeout(() => setToast(null), 3000);
   };
 
+  const handleLogout = async () => {
+    if (window.confirm("Deseja realmente sair?")) {
+      try {
+        if (isDemo) {
+          localStorage.removeItem('isDemoMode');
+          window.location.reload();
+        } else {
+          await logout();
+        }
+      } catch (error) {
+        showToast('error', 'Erro ao sair.');
+      }
+    }
+  };
+
   const sincronizarBancoDeDados = async () => {
     const opcao = window.prompt(
-      "☁️ SINCRONIZAÇÃO EM NUVEM\n\nDigite 1 para SALVAR dados na nuvem.\nDigite 2 para BAIXAR dados da nuvem."
+      "☁️ SINCRONIZAÇÃO EM NUVEM (Google Sheets)\n\nDigite 1 para SALVAR dados locais na planilha.\nDigite 2 para BAIXAR dados da planilha para o local.\n\nNota: O Firebase já sincroniza seus dados automaticamente entre dispositivos!"
     );
 
     if (opcao === "1") {
@@ -50,13 +68,13 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
       setIsSyncing(false);
       
       if (success) {
-        alert("✅ Backup salvo na nuvem com sucesso!");
+        alert("✅ Backup salvo na planilha com sucesso!");
       } else {
-        alert("❌ Erro ao salvar na nuvem. Verifique sua conexão ou o script do Google.");
+        alert("❌ Erro ao salvar. Verifique sua conexão.");
       }
 
     } else if (opcao === "2") {
-      const confirmacao = window.confirm("⚠️ ATENÇÃO: Isso vai substituir os dados locais pelo backup da nuvem. Continuar?");
+      const confirmacao = window.confirm("⚠️ ATENÇÃO: Isso vai substituir os dados locais pelo backup da planilha. Continuar?");
       if (!confirmacao) return;
 
       setIsSyncing(true);
@@ -64,17 +82,17 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
       setIsSyncing(false);
       
       if (success) {
-        alert("✅ Dados sincronizados com sucesso! A página será reiniciada.");
+        alert("✅ Dados sincronizados! A página será reiniciada.");
         window.location.reload(); 
       } else {
-        alert("❌ Erro ao baixar dados da nuvem ou nenhum backup encontrado.");
+        alert("❌ Erro ao baixar dados ou nenhum backup encontrado.");
       }
     }
   };
 
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     try {
-      const backup = db.getFullBackup();
+      const backup = await db.getFullBackup();
       const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -116,9 +134,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
     e.target.value = '';
   };
 
-  const confirmRestore = () => {
+  const confirmRestore = async () => {
     if (!pendingBackupData) return;
-    const success = db.restoreFullBackup(pendingBackupData);
+    const success = await db.restoreFullBackup(pendingBackupData);
     if (success) {
       showToast('success', 'Dados atualizados!');
       setTimeout(() => window.location.reload(), 1000);
@@ -189,6 +207,35 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
               </button>
             ))}
           </nav>
+
+          { (user || isDemo) && (
+            <div className="p-4 bg-[#0f172a] border-t border-slate-700">
+              <div className="flex items-center gap-3 mb-4">
+                {user?.photoURL ? (
+                  <img src={user.photoURL} alt={user.displayName || ''} className="w-10 h-10 rounded-full border-2 border-green-500" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center font-bold text-slate-300">
+                    {user?.displayName?.charAt(0) || 'D'}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 truncate">
+                    {isDemo ? 'Modo de Demonstração' : 'Usuário'}
+                  </p>
+                  <p className="text-xs font-bold text-white truncate">
+                    {isDemo ? 'Visitante Local' : user?.displayName}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center gap-3 px-4 py-2 rounded-lg text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all"
+              >
+                <LogOut size={18} />
+                <span className="text-[10px] font-black uppercase tracking-widest">Sair do Sistema</span>
+              </button>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -223,3 +270,4 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
 };
 
 export default Layout;
+

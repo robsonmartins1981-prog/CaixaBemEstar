@@ -91,8 +91,8 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
     }, {} as Record<string, number>);
 
     const sortedSpendingByNature = Object.entries(spendingByNature)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a, b) => b.value - a.value);
+      .map(([name, value]) => ({ name, value: value as number }))
+      .sort((a, b) => (b.value as number) - (a.value as number));
 
     // 3. Média Diária
     const uniqueDaysCount = new Set(filteredEntries.map(e => e.date)).size;
@@ -247,9 +247,10 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
       </div>
 
       {/* KPIs DE ALTO NÍVEL */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         <MainKPICard title="Faturamento Bruto" value={stats.totalIn} icon={<ArrowUpRight className="text-emerald-500"/>} bg="bg-white" />
         <MainKPICard title="Média Diária" value={stats.averageDaily} icon={<TrendingUp className="text-cyan-500" size={18}/>} bg="bg-white" />
+        <MainKPICard title="Dias Ativos" value={stats.uniqueDaysCount} icon={<Calendar className="text-blue-500" size={18}/>} bg="bg-white" isCount />
         <MainKPICard title="Despesas Pagas" value={stats.totalOutPaid} icon={<CheckCircle2 className="text-blue-500" size={18}/>} bg="bg-white" />
         <MainKPICard title="Contas Pendentes" value={stats.totalOutPendingGlobal} icon={<AlertCircle className="text-orange-500" size={18}/>} bg="bg-white" />
         <MainKPICard title="Saldo Líquido" value={stats.netBalance} icon={<Layers className="text-white" size={18}/>} bg="bg-slate-900" isDark />

@@ -14,7 +14,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
   const [isClearModalOpen, setIsClearModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleExportData = (type: 'caixa' | 'contas') => {
+  const handleExportData = async (type: 'caixa' | 'contas') => {
     try {
       setSuccess(null);
       setError(null);
@@ -25,7 +25,8 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
       
       if (type === 'caixa') {
         headers = ["Data", "Turno/Caixa", "Dinheiro (R$)", "Pix (R$)", "Crédito (R$)", "Débito (R$)", "Líquido (R$)"];
-        rows = db.getEntries().map(e => [
+        const entries = await db.getEntries();
+        rows = entries.map(e => [
           e.date.split('-').reverse().join('/'), 
           e.shift, 
           e.cash, 
@@ -36,7 +37,8 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
         ]);
       } else {
         headers = ["Descrição", "Fornecedor", "Vencimento", "Valor (R$)", "Natureza", "Status"];
-        rows = db.getExpenses().map(e => [
+        const expenses = await db.getExpenses();
+        rows = expenses.map(e => [
           e.description, 
           e.supplier, 
           e.dueDate.split('-').reverse().join('/'), 
@@ -67,11 +69,11 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
     }
   };
 
-  const handleExportBackup = () => {
+  const handleExportBackup = async () => {
     try {
       setSuccess(null);
       setError(null);
-      const backupData = db.getFullBackup();
+      const backupData = await db.getFullBackup();
       const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -92,7 +94,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       try {
         const content = event.target?.result as string;
         const backupData = JSON.parse(content);
@@ -101,7 +103,7 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
           throw new Error("Formato de arquivo inválido.");
         }
 
-        const success = db.restoreFullBackup(backupData);
+        const success = await db.restoreFullBackup(backupData);
         if (success) {
           setSuccess("Backup restaurado com sucesso! Todos os dados foram sincronizados.");
           onSuccess(); // Atualiza a interface
@@ -131,8 +133,8 @@ const ImportData: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
       <ConfirmationModal 
         isOpen={isClearModalOpen}
         onClose={() => setIsClearModalOpen(false)}
-        onConfirm={() => {
-          db.clearAllData();
+        onConfirm={async () => {
+          await db.clearAllData();
           setSuccess("Todos os dados foram apagados com sucesso.");
           onSuccess();
           setIsClearModalOpen(false);

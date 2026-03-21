@@ -23,14 +23,16 @@ const rawHistoricalData = `Data,Turno,Dinheiro,Credito,Debito,Pix
 2025-12-18,Tarde,698.0,1134.23,1134.23,522.83`;
 
 // Executa a semeadura de dados apenas se o banco estiver vazio
-try {
-  const seededCount = db.seedInitialData(rawHistoricalData);
-  if (seededCount > 0) {
-    console.debug(`[Startup] ${seededCount} registros históricos iniciais carregados.`);
+(async () => {
+  try {
+    const seededCount = await db.seedInitialData(rawHistoricalData);
+    if (seededCount > 0) {
+      console.debug(`[Startup] ${seededCount} registros históricos iniciais carregados.`);
+    }
+  } catch (e) {
+    console.error("[Startup] Falha na semeadura de dados:", e);
   }
-} catch (e) {
-  console.error("[Startup] Falha na semeadura de dados:", e);
-}
+})();
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
