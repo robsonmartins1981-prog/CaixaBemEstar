@@ -91,8 +91,9 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
       pix: periodEntries.reduce((acc, e) => acc + (e.pix || 0), 0),
       debito: periodEntries.reduce((acc, e) => acc + (e.debit || 0), 0),
       credito: periodEntries.reduce((acc, e) => acc + (e.credit || 0), 0),
+      sangria: periodEntries.reduce((acc, e) => acc + (e.sangria || 0), 0),
     };
-    const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito;
+    const receitaBruta = faturamento.dinheiro + faturamento.pix + faturamento.debito + faturamento.credito - faturamento.sangria;
     const custoOperacional = paidPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
     const custoTotalReal = custoOperacional;
     const lucroLiquido = receitaBruta - custoTotalReal;
@@ -101,8 +102,12 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
     const totalObrigacoes = allPeriodExpenses.reduce((acc, e) => acc + e.value, 0);
     const compositionMap: Record<string, number> = {};
     let totalFiltered = 0;
-    allPeriodExpenses.filter(e => selectedNatures.includes(e.nature)).forEach(exp => {
-      compositionMap[exp.nature] = (compositionMap[exp.nature] || 0) + exp.value;
+    allPeriodExpenses.filter(e => {
+      const normalizedNature = e.nature === 'Custo da Mercadoria Vendida' ? 'Custo da Mercadoria Vendida (CMV)' : e.nature;
+      return selectedNatures.includes(normalizedNature);
+    }).forEach(exp => {
+      const normalizedNature = exp.nature === 'Custo da Mercadoria Vendida' ? 'Custo da Mercadoria Vendida (CMV)' : exp.nature;
+      compositionMap[normalizedNature] = (compositionMap[normalizedNature] || 0) + exp.value;
       totalFiltered += exp.value;
     });
 
@@ -188,6 +193,7 @@ const Reports: React.FC<ReportsProps> = ({ entries, expenses }) => {
                   <DRERow label="(+) Movimento via PIX" value={analytics.dre.faturamento.pix} rb={rb} />
                   <DRERow label="(+) Vendas em Débito" value={analytics.dre.faturamento.debito} rb={rb} />
                   <DRERow label="(+) Vendas em Crédito" value={analytics.dre.faturamento.credito} rb={rb} />
+                  <DRERow label="(-) Sangrias (Retiradas)" value={analytics.dre.faturamento.sangria} rb={rb} isNegative />
                 </div>
 
                 <div className="h-4 print:h-2"></div>

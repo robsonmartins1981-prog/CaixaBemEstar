@@ -69,7 +69,7 @@ export const parseNFeXML = (xmlString: string): ParsedXMLData | null => {
 
 export const convertParsedDataToExpenses = (data: ParsedXMLData): Omit<Expense, 'id'>[] => {
   const expenses: Omit<Expense, 'id'>[] = [];
-  const nature: ExpenseNature = 'Custo da Mercadoria Vendida'; // Default for purchase XML
+  const nature: ExpenseNature = 'Custo da Mercadoria Vendida (CMV)'; // Default for purchase XML
 
   if (data.installments.length > 0) {
     data.installments.forEach(inst => {

@@ -110,7 +110,8 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                           exp.description.toLowerCase().includes(sTerm);
       
       // 2. Filtro de Natureza
-      const matchNature = isAllNaturesSelected || selectedNatures.includes(exp.nature);
+      const normalizedNature = exp.nature === 'Custo da Mercadoria Vendida' ? 'Custo da Mercadoria Vendida (CMV)' : exp.nature;
+      const matchNature = isAllNaturesSelected || selectedNatures.includes(normalizedNature);
       
       // 3. Filtro de Status
       const matchStatus = 
@@ -289,7 +290,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
     if (finalSupplier && !suppliers.some(s => s.name.toLowerCase() === finalSupplier.toLowerCase())) {
       await db.saveSupplier({
         name: finalSupplier,
-        category: 'Custo da Mercadoria Vendida',
+        category: 'Custo da Mercadoria Vendida (CMV)',
         contactName: '',
         contactPhone: '',
         contactEmail: ''
@@ -659,6 +660,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
             <tbody className="divide-y divide-slate-100">
               {processedExpenses.map((exp) => {
                 const isOverdue = exp.status === 'Pendente' && exp.dueDate < new Date().toISOString().split('T')[0];
+                const normalizedNature = exp.nature === 'Custo da Mercadoria Vendida' ? 'Custo da Mercadoria Vendida (CMV)' : exp.nature;
                 return (
                 <tr key={exp.id} className={`hover:bg-slate-50/80 transition-colors ${editingId === exp.id ? 'bg-orange-50' : ''} ${isOverdue ? 'bg-red-50/30' : ''}`}>
                   <td className={`px-6 py-5 text-[13px] font-mono font-black ${isOverdue ? 'text-red-600' : 'text-slate-700'}`}>
@@ -673,7 +675,7 @@ const AccountsPayable: React.FC<AccountsPayableProps> = ({ onSuccess, expenses }
                   </td>
                   <td className="px-6 py-5">
                     <div className="flex flex-col gap-1 items-start">
-                      <span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-200 uppercase whitespace-nowrap">{exp.nature}</span>
+                      <span className="text-[9px] font-black bg-slate-100 text-slate-500 px-2.5 py-1 rounded-lg border border-slate-200 uppercase whitespace-nowrap">{normalizedNature}</span>
                       <span className={`text-[9px] font-black px-2.5 py-1 rounded-lg border uppercase ${exp.costType === 'Fixo' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-purple-50 text-purple-600 border-purple-100'}`}>{exp.costType}</span>
                     </div>
                   </td>

@@ -16,7 +16,7 @@ import {
   getDocFromServer
 } from 'firebase/firestore';
 
-enum OperationType {
+export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
   DELETE = 'delete',
@@ -44,7 +44,7 @@ interface FirestoreErrorInfo {
   }
 }
 
-function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -186,7 +186,8 @@ export const db = {
           cash: sanitizeNumber(doc.data().cash),
           pix: sanitizeNumber(doc.data().pix),
           credit: sanitizeNumber(doc.data().credit),
-          debit: sanitizeNumber(doc.data().debit)
+          debit: sanitizeNumber(doc.data().debit),
+          sangria: sanitizeNumber(doc.data().sangria)
         } as CashEntry));
       } catch (error) {
         handleFirestoreError(error, OperationType.LIST, 'caixa');
@@ -201,7 +202,8 @@ export const db = {
         cash: sanitizeNumber(e.cash),
         pix: sanitizeNumber(e.pix),
         credit: sanitizeNumber(e.credit),
-        debit: sanitizeNumber(e.debit)
+        debit: sanitizeNumber(e.debit),
+        sangria: sanitizeNumber(e.sangria)
       })) : [];
     } catch (e) {
       return [];
@@ -214,7 +216,8 @@ export const db = {
       cash: sanitizeNumber(entry.cash),
       pix: sanitizeNumber(entry.pix),
       credit: sanitizeNumber(entry.credit),
-      debit: sanitizeNumber(entry.debit)
+      debit: sanitizeNumber(entry.debit),
+      sangria: sanitizeNumber(entry.sangria)
     };
 
     if (auth.currentUser && !isDemo()) {
@@ -230,12 +233,16 @@ export const db = {
           const docId = querySnapshot.docs[0].id;
           await updateDoc(doc(firestore, 'caixa', docId), { ...sanitized });
         } else {
-          // Need to get all entries to calculate code, or just use a timestamp
-          const allEntries = await db.getEntries();
+          // Get only the count or the last entry to determine the next code
+          // To stay within Spark limits, we'll use a timestamp-based code or a simple count query
+          const countQuery = query(collection(firestore, 'caixa'), where('uid', '==', auth.currentUser.uid));
+          const countSnapshot = await getDocs(countQuery); // Still a bit heavy but better than fetching all data
+          const nextCode = (countSnapshot.size + 1).toString().padStart(4, '0');
+          
           await addDoc(collection(firestore, 'caixa'), {
             ...sanitized,
             uid: auth.currentUser.uid,
-            code: (allEntries.length + 1).toString().padStart(4, '0')
+            code: nextCode
           });
         }
       } catch (error) {
@@ -243,7 +250,7 @@ export const db = {
       }
     }
 
-    // LocalStorage sync
+    // LocalStorage sync - still needs the full list for local persistence
     const entries = await db.getEntries();
     const idx = entries.findIndex(e => e.date === sanitized.date && e.shift === sanitized.shift);
     if (idx !== -1) {
@@ -263,21 +270,29 @@ export const db = {
           pix: sanitizeNumber(entry.pix),
           credit: sanitizeNumber(entry.credit),
           debit: sanitizeNumber(entry.debit),
+          sangria: sanitizeNumber(entry.sangria),
           uid: auth.currentUser.uid
         });
       } catch (error) {
         handleFirestoreError(error, OperationType.WRITE, 'caixa');
       }
     }
-    const entries = await db.getEntries();
-    entries.push({
-      ...entry,
-      cash: sanitizeNumber(entry.cash),
-      pix: sanitizeNumber(entry.pix),
-      credit: sanitizeNumber(entry.credit),
-      debit: sanitizeNumber(entry.debit)
-    });
-    safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
+    // Sync with local storage without fetching everything from Firestore
+    try {
+      const data = localStorage.getItem(KEYS.ENTRIES);
+      const entries = data ? JSON.parse(data) : [];
+      entries.push({
+        ...entry,
+        cash: sanitizeNumber(entry.cash),
+        pix: sanitizeNumber(entry.pix),
+        credit: sanitizeNumber(entry.credit),
+        debit: sanitizeNumber(entry.debit),
+        sangria: sanitizeNumber(entry.sangria)
+      });
+      safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
+    } catch (e) {
+      console.error("Erro ao sincronizar localmente:", e);
+    }
   },
 
   updateEntry: async (id: string, updated: Omit<CashEntry, 'id' | 'code'>) => {
@@ -286,7 +301,8 @@ export const db = {
       cash: sanitizeNumber(updated.cash),
       pix: sanitizeNumber(updated.pix),
       credit: sanitizeNumber(updated.credit),
-      debit: sanitizeNumber(updated.debit)
+      debit: sanitizeNumber(updated.debit),
+      sangria: sanitizeNumber(updated.sangria)
     };
 
     if (auth.currentUser && !isDemo()) {
@@ -297,14 +313,19 @@ export const db = {
       }
     }
 
-    const entries = await db.getEntries();
-    const idx = entries.findIndex(e => e.id === id);
-    if (idx !== -1) {
-      entries[idx] = { 
-        ...entries[idx], 
-        ...sanitized
-      };
-      safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
+    try {
+      const data = localStorage.getItem(KEYS.ENTRIES);
+      const entries = data ? JSON.parse(data) : [];
+      const idx = entries.findIndex((e: any) => e.id === id);
+      if (idx !== -1) {
+        entries[idx] = { 
+          ...entries[idx], 
+          ...sanitized
+        };
+        safeSetItem(KEYS.ENTRIES, JSON.stringify(entries));
+      }
+    } catch (e) {
+      console.error("Erro ao sincronizar localmente:", e);
     }
   },
 
@@ -346,9 +367,14 @@ export const db = {
         handleFirestoreError(error, OperationType.WRITE, 'contas');
       }
     }
-    const expenses = await db.getExpenses();
-    expenses.push({ ...expense, id: generateId(), value: sanitizeNumber(expense.value) });
-    safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
+    try {
+      const data = localStorage.getItem(KEYS.EXPENSES);
+      const expenses = data ? JSON.parse(data) : [];
+      expenses.push({ ...expense, id: generateId(), value: sanitizeNumber(expense.value) });
+      safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
+    } catch (e) {
+      console.error("Erro ao sincronizar localmente:", e);
+    }
   },
 
   updateExpense: async (id: string, updated: Omit<Expense, 'id'>) => {
@@ -360,11 +386,16 @@ export const db = {
         handleFirestoreError(error, OperationType.UPDATE, `contas/${id}`);
       }
     }
-    const expenses = await db.getExpenses();
-    const idx = expenses.findIndex(e => e.id === id);
-    if (idx !== -1) {
-      expenses[idx] = { ...expenses[idx], ...sanitized };
-      safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
+    try {
+      const data = localStorage.getItem(KEYS.EXPENSES);
+      const expenses = data ? JSON.parse(data) : [];
+      const idx = expenses.findIndex((e: any) => e.id === id);
+      if (idx !== -1) {
+        expenses[idx] = { ...expenses[idx], ...sanitized };
+        safeSetItem(KEYS.EXPENSES, JSON.stringify(expenses));
+      }
+    } catch (e) {
+      console.error("Erro ao sincronizar localmente:", e);
     }
   },
 
@@ -504,41 +535,68 @@ export const db = {
   restoreFullBackup: async (backup: any) => {
     try {
       if (!backup?.data) return false;
+      const uid = auth.currentUser?.uid;
 
       // 1. Merge de Entradas de Caixa (Upsert por Data e Turno)
       const currentEntries = await db.getEntries();
       if (Array.isArray(backup.data.entries)) {
-        for (const newEntry of backup.data.entries) {
+        for (const rawEntry of backup.data.entries) {
+          const newEntry: CashEntry = {
+            ...rawEntry,
+            cash: sanitizeNumber(rawEntry.cash),
+            pix: sanitizeNumber(rawEntry.pix),
+            credit: sanitizeNumber(rawEntry.credit),
+            debit: sanitizeNumber(rawEntry.debit),
+            sangria: sanitizeNumber(rawEntry.sangria),
+            id: rawEntry.id || generateId(),
+            code: rawEntry.code || (currentEntries.length + 1).toString().padStart(4, '0')
+          };
+
           const idx = currentEntries.findIndex(ce => ce.date === newEntry.date && ce.shift === newEntry.shift);
           if (idx !== -1) {
-            currentEntries[idx] = { ...currentEntries[idx], ...newEntry };
-            if (auth.currentUser && !isDemo()) {
-              await updateDoc(doc(firestore, 'caixa', currentEntries[idx].id), { ...newEntry });
+            const existingId = currentEntries[idx].id;
+            currentEntries[idx] = { ...currentEntries[idx], ...newEntry, id: existingId };
+            if (uid && !isDemo()) {
+              await setDoc(doc(firestore, 'caixa', existingId), { ...currentEntries[idx], uid }, { merge: true });
             }
           } else {
             currentEntries.push(newEntry);
-            if (auth.currentUser && !isDemo()) {
-              await addDoc(collection(firestore, 'caixa'), { ...newEntry, uid: auth.currentUser.uid });
+            if (uid && !isDemo()) {
+              await setDoc(doc(firestore, 'caixa', newEntry.id), { ...newEntry, uid }, { merge: true });
             }
           }
         }
       }
       safeSetItem(KEYS.ENTRIES, JSON.stringify(currentEntries));
 
-      // 2. Merge de Despesas (Upsert por ID)
+      // 2. Merge de Despesas (Upsert por ID ou Descrição+Data se ID faltar)
       const currentExpenses = await db.getExpenses();
       if (Array.isArray(backup.data.expenses)) {
-        for (const newExp of backup.data.expenses) {
-          const idx = currentExpenses.findIndex(ce => ce.id === newExp.id);
+        for (const rawExp of backup.data.expenses) {
+          const newExp: Expense = {
+            ...rawExp,
+            value: sanitizeNumber(rawExp.value),
+            nature: rawExp.nature || rawExp.category || 'Outros',
+            costType: rawExp.costType || 'Variável',
+            status: rawExp.status || 'Pendente',
+            id: rawExp.id || generateId()
+          };
+
+          const idx = currentExpenses.findIndex(ce => 
+            ce.id === newExp.id || 
+            (ce.description.toLowerCase() === newExp.description.toLowerCase() && 
+             ce.dueDate === newExp.dueDate && 
+             Math.abs(ce.value - newExp.value) < 0.01)
+          );
           if (idx !== -1) {
             currentExpenses[idx] = { ...currentExpenses[idx], ...newExp };
-            if (auth.currentUser && !isDemo()) {
-              await updateDoc(doc(firestore, 'contas', currentExpenses[idx].id), { ...newExp });
+            if (uid && !isDemo()) {
+              await setDoc(doc(firestore, 'contas', currentExpenses[idx].id), { ...currentExpenses[idx], uid }, { merge: true });
             }
           } else {
             currentExpenses.push(newExp);
-            if (auth.currentUser && !isDemo()) {
-              await addDoc(collection(firestore, 'contas'), { ...newExp, uid: auth.currentUser.uid });
+            if (uid && !isDemo()) {
+              await setDoc(doc(firestore, 'contas', newExp.id), { ...newExp, uid }, { merge: true });
             }
           }
         }
@@ -548,24 +606,30 @@ export const db = {
       // 3. Merge de Fornecedores (Upsert por Nome)
       const currentSuppliers = await db.getSuppliers();
       if (Array.isArray(backup.data.suppliers)) {
-        for (const newSup of backup.data.suppliers) {
+        for (const rawSup of backup.data.suppliers) {
+          const newSup: Supplier = {
+            ...rawSup,
+            id: rawSup.id || generateId()
+          };
+
           const idx = currentSuppliers.findIndex(cs => cs.name.toLowerCase() === newSup.name.toLowerCase());
           if (idx !== -1) {
-            currentSuppliers[idx] = { ...currentSuppliers[idx], ...newSup };
-            if (auth.currentUser && !isDemo()) {
-              await updateDoc(doc(firestore, 'fornecedores', currentSuppliers[idx].id), { ...newSup });
+            const existingId = currentSuppliers[idx].id;
+            currentSuppliers[idx] = { ...currentSuppliers[idx], ...newSup, id: existingId };
+            if (uid && !isDemo()) {
+              await setDoc(doc(firestore, 'fornecedores', existingId), { ...currentSuppliers[idx], uid }, { merge: true });
             }
           } else {
             currentSuppliers.push(newSup);
-            if (auth.currentUser && !isDemo()) {
-              await addDoc(collection(firestore, 'fornecedores'), { ...newSup, uid: auth.currentUser.uid });
+            if (uid && !isDemo()) {
+              await setDoc(doc(firestore, 'fornecedores', newSup.id), { ...newSup, uid }, { merge: true });
             }
           }
         }
       }
       safeSetItem(KEYS.SUPPLIERS, JSON.stringify(currentSuppliers));
 
-      // 4. Taxas de Cartão (Sobrescrita simples pois é configuração única)
+      // 4. Taxas de Cartão
       if (backup.data.rates) {
         await db.saveCardRates(backup.data.rates);
       }
@@ -607,14 +671,15 @@ export const db = {
     if (entries.length > 0) return 0;
     const lines = csv.trim().split('\n');
     for (const line of lines.slice(1)) {
-      const [date, shift, cash, credit, debit, pix] = line.split(',');
+      const [date, shift, cash, credit, debit, pix, sangria] = line.split(',');
       await db.upsertEntry({
         date: date.trim(),
-        shift: (shift.includes('Tarde') ? 'CAIXA 02 (TARDE)' : 'CAIXA 01 (MANHÃ)') as any,
+        shift: (shift.includes('Tarde') ? 'CAIXA 02 (TARDE)' : shift.includes('Noite') ? 'CAIXA 03 (NOITE)' : 'CAIXA 01 (MANHÃ)') as any,
         cash: sanitizeNumber(cash),
         credit: sanitizeNumber(credit),
         debit: sanitizeNumber(debit),
-        pix: sanitizeNumber(pix)
+        pix: sanitizeNumber(pix),
+        sangria: sanitizeNumber(sangria || 0)
       });
     }
     return lines.length - 1;

@@ -10,10 +10,11 @@ export interface CashEntry {
   credit: number;
   debit: number;
   pix: number;
+  sangria?: number;
 }
 
 export type ExpenseNature = 
-  | 'Custo da Mercadoria Vendida' 
+  | 'Custo da Mercadoria Vendida (CMV)' 
   | 'Frete/Logística'
   | 'Embalagens'
   | 'Impostos'

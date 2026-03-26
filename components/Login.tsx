@@ -52,8 +52,12 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         setError("A senha deve ter pelo menos 6 caracteres.");
       } else if (err.code === 'auth/api-key-not-valid.-please-pass-a-valid-api-key.') {
         setError("O servidor do Google ainda está configurando seu banco de dados (isso pode levar 15-30 min). Por favor, use o 'Modo de Demonstração (Local)' abaixo para começar agora mesmo!");
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError("O login por E-mail ou Google não está ativado no Console do Firebase. Ative-os em 'Authentication > Sign-in method'.");
+      } else if (err.code === 'auth/unauthorized-domain') {
+        setError("Este domínio não está autorizado no Firebase. Adicione '" + window.location.hostname + "' em 'Authentication > Settings > Authorized domains'.");
       } else {
-        setError("Ocorreu um erro ao processar sua solicitação.");
+        setError("Erro: " + (err.message || "Ocorreu um erro ao processar sua solicitação."));
       }
     } finally {
       setLoading(false);

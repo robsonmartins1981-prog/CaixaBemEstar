@@ -70,13 +70,15 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
       pix: filteredEntries.reduce((acc, e) => acc + (e.pix || 0), 0),
       debito: filteredEntries.reduce((acc, e) => acc + (e.debit || 0), 0),
       credito: filteredEntries.reduce((acc, e) => acc + (e.credit || 0), 0),
+      sangria: filteredEntries.reduce((acc, e) => acc + (e.sangria || 0), 0),
     };
 
     const totalIn = 
       (paymentFilters.cash ? faturamentoRaw.dinheiro : 0) +
       (paymentFilters.pix ? faturamentoRaw.pix : 0) +
       (paymentFilters.debito ? faturamentoRaw.debito : 0) +
-      (paymentFilters.credit ? faturamentoRaw.credito : 0);
+      (paymentFilters.credit ? faturamentoRaw.credito : 0) -
+      faturamentoRaw.sangria;
 
     const totalOutPaid = filteredExpenses.filter(e => e.status === 'Pago').reduce((acc, e) => acc + e.value, 0);
     const totalOutPendingInPeriod = filteredExpenses.filter(e => e.status === 'Pendente').reduce((acc, e) => acc + e.value, 0);
@@ -120,7 +122,7 @@ const Dashboard: React.FC<DashboardProps> = ({ entries, expenses }) => {
         if (paymentFilters.pix) dayIn += curr.pix;
         if (paymentFilters.credit) dayIn += curr.credit;
         if (paymentFilters.debit) dayIn += curr.debit;
-        timelineMap[curr.date].entradas += dayIn;
+        timelineMap[curr.date].entradas += (dayIn - (curr.sangria || 0));
       }
     });
 
